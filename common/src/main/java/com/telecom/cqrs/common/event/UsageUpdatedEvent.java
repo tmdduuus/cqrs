@@ -1,0 +1,18 @@
+package com.telecom.cqrs.common.event;
+
+import lombok.Data;
+import java.time.LocalDateTime;
+
+/**
+ * 사용량 업데이트 이벤트를 표현하는 클래스입니다.
+ */
+@Data
+public class UsageUpdatedEvent {
+    private String eventId;
+    private String eventType;
+    private String userId;
+    private Long dataUsage;
+    private Long callUsage;
+    private Long messageUsage;
+    private LocalDateTime timestamp;
+}
