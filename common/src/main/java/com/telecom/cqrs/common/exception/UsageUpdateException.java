@@ -1,4 +1,4 @@
-package com.telecom.cqrs.command.exception;
+package com.telecom.cqrs.common.exception;
 
 /**
  * 사용량 업데이트 중 발생하는 예외를 처리하는 클래스입니다.

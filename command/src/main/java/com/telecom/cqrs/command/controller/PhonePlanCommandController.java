@@ -2,8 +2,8 @@
 package com.telecom.cqrs.command.controller;
 
 import com.telecom.cqrs.command.domain.PhonePlan;
-import com.telecom.cqrs.command.dto.UsageUpdateRequest;
-import com.telecom.cqrs.command.dto.UsageUpdateResponse;
+import com.telecom.cqrs.common.dto.UsageUpdateRequest;
+import com.telecom.cqrs.common.dto.UsageUpdateResponse;
 import com.telecom.cqrs.command.service.PhonePlanCommandService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

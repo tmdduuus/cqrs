@@ -22,18 +22,17 @@ public class EventHubConfig {
         log.info("Event Hub connection string validated");
     }
 
-    @Bean
-    public EventHubProducerClient eventHubProducerClient() {
+    @Bean(name = "usageEventProducer")
+    public EventHubProducerClient usageEventProducer() {
         return new EventHubClientBuilder()
-                .connectionString(connectionString, "phone-plan-events")
+                .connectionString(connectionString, "usage-events")
                 .buildProducerClient();
     }
 
-    @Bean
-    public EventHubConsumerClient eventHubConsumerClient() {
+    @Bean(name = "planEventProducer")
+    public EventHubProducerClient planEventProducer() {
         return new EventHubClientBuilder()
                 .connectionString(connectionString, "phone-plan-events")
-                .consumerGroup(EventHubClientBuilder.DEFAULT_CONSUMER_GROUP_NAME)
-                .buildConsumerClient();
+                .buildProducerClient();
     }
 }

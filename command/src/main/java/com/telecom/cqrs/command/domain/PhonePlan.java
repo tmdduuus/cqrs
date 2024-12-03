@@ -10,15 +10,18 @@ import lombok.Setter;
  * Write DB(PostgreSQL)에 저장됩니다.
  */
 @Entity
-@Table(name = "phone_plans")
+@Table(name = "phone_plans",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"userId"}))
 @Getter @Setter
 @NoArgsConstructor
 public class PhonePlan {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
+    @Column(nullable = false, unique = true)
     private String userId;
+
     private String planName;
     private int dataAllowance;
     private int callMinutes;

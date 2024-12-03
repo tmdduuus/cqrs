@@ -1,5 +1,5 @@
 // src/main/java/com/telecom/cqrs/config/JacksonConfig.java
-package com.telecom.cqrs.query.config;
+package com.telecom.cqrs.common.config;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;

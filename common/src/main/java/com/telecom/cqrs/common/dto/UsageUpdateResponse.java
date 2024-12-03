@@ -1,4 +1,4 @@
-package com.telecom.cqrs.command.dto;
+package com.telecom.cqrs.common.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;

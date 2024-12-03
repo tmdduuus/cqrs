@@ -1,5 +1,7 @@
 package com.telecom.cqrs.query.exception;
 
+import com.telecom.cqrs.common.exception.ErrorResponse;
+import com.telecom.cqrs.common.exception.PhonePlanNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;

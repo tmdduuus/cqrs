@@ -1,39 +1,59 @@
 package com.telecom.cqrs.query.config;
 
-import com.azure.messaging.eventhubs.*;
-import jakarta.annotation.PostConstruct;
-import lombok.extern.slf4j.Slf4j;
+import com.azure.messaging.eventhubs.EventProcessorClient;
+import com.azure.messaging.eventhubs.EventProcessorClientBuilder;
+import com.azure.messaging.eventhubs.checkpointstore.blob.BlobCheckpointStore;
+import com.telecom.cqrs.query.event.PhonePlanEventHandler;
+import com.telecom.cqrs.query.event.UsageEventHandler;
 import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @Slf4j
 public class EventHubConfig {
+    private final BlobStorageConfig blobStorageConfig;
+    private final UsageEventHandler usageEventHandler;
+    private final PhonePlanEventHandler planEventHandler;
 
     @Value("${EVENT_HUB_CONNECTION_STRING}")
     private String connectionString;
 
-    @PostConstruct
-    public void validateConfig() {
-        if (connectionString == null || connectionString.trim().isEmpty()) {
-            throw new IllegalStateException("Event Hub connection string not configured");
-        }
-        log.info("Event Hub connection string validated");
+    public EventHubConfig(
+            BlobStorageConfig blobStorageConfig,
+            UsageEventHandler usageEventHandler,
+            PhonePlanEventHandler planEventHandler) {
+        this.blobStorageConfig = blobStorageConfig;
+        this.usageEventHandler = usageEventHandler;
+        this.planEventHandler = planEventHandler;
     }
 
-    @Bean
-    public EventHubProducerClient eventHubProducerClient() {
-        return new EventHubClientBuilder()
-                .connectionString(connectionString, "phone-plan-events")
-                .buildProducerClient();
+    @Bean(name = "usageEventProcessor")
+    public EventProcessorClient usageEventProcessor() {
+        var blobClient = blobStorageConfig
+                .getBlobContainerAsyncClient(BlobStorageContainers.USAGE_CONTAINER);
+
+        return new EventProcessorClientBuilder()
+                .connectionString(connectionString, "usage-events")
+                .consumerGroup("$Default")
+                .checkpointStore(new BlobCheckpointStore(blobClient))
+                .processEvent(usageEventHandler::processEvent)
+                .processError(usageEventHandler::processError)
+                .buildEventProcessorClient();
     }
 
-    @Bean
-    public EventHubConsumerClient eventHubConsumerClient() {
-        return new EventHubClientBuilder()
+    @Bean(name = "planEventProcessor")
+    public EventProcessorClient planEventProcessor() {
+        var blobClient = blobStorageConfig
+                .getBlobContainerAsyncClient(BlobStorageContainers.PLAN_CONTAINER);
+
+        return new EventProcessorClientBuilder()
                 .connectionString(connectionString, "phone-plan-events")
-                .consumerGroup(EventHubClientBuilder.DEFAULT_CONSUMER_GROUP_NAME)
-                .buildConsumerClient();
+                .consumerGroup("$Default")
+                .checkpointStore(new BlobCheckpointStore(blobClient))
+                .processEvent(planEventHandler::processEvent)
+                .processError(planEventHandler::processError)
+                .buildEventProcessorClient();
     }
 }
