@@ -1,6 +1,8 @@
 package com.telecom.cqrs.command.config;
 
-import com.azure.messaging.eventhubs.*;
+import com.azure.messaging.eventhubs.EventHubClientBuilder;
+import com.azure.messaging.eventhubs.EventHubProducerClient;
+import com.telecom.cqrs.common.constant.Constants;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,14 +27,14 @@ public class EventHubConfig {
     @Bean(name = "usageEventProducer")
     public EventHubProducerClient usageEventProducer() {
         return new EventHubClientBuilder()
-                .connectionString(connectionString, "usage-events")
+                .connectionString(connectionString, Constants.EVENT_HUB_NAME)
                 .buildProducerClient();
     }
 
     @Bean(name = "planEventProducer")
     public EventHubProducerClient planEventProducer() {
         return new EventHubClientBuilder()
-                .connectionString(connectionString, "phone-plan-events")
+                .connectionString(connectionString, Constants.EVENT_HUB_NAME)
                 .buildProducerClient();
     }
 }

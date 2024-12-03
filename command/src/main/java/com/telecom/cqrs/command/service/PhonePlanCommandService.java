@@ -42,14 +42,40 @@ public class PhonePlanCommandService {
     @Transactional
     public PhonePlan changePhonePlan(PhonePlan phonePlan) {
         try {
-            phonePlan.setStatus(phonePlan.getStatus() == null ? "ACTIVE" : phonePlan.getStatus());
-            PhonePlan savedPlan = phonePlanRepository.save(phonePlan);
-            publishEvent(createPhonePlanEvent(savedPlan), savedPlan.getUserId(), planEventProducer);
+            // 기존 데이터 조회
+            PhonePlan existingPlan = phonePlanRepository.findByUserId(phonePlan.getUserId())
+                    .orElse(null);
+
+            PhonePlan savedPlan;
+            if (existingPlan != null) {
+                // 기존 데이터 있으면 업데이트
+                log.info("Updating existing plan for userId={}", phonePlan.getUserId());
+                updateExistingPlan(existingPlan, phonePlan);
+                savedPlan = phonePlanRepository.save(existingPlan);
+            } else {
+                // 신규 데이터 생성
+                log.info("Creating new plan for userId={}", phonePlan.getUserId());
+                phonePlan.setStatus(phonePlan.getStatus() == null ? "ACTIVE" : phonePlan.getStatus());
+                savedPlan = phonePlanRepository.save(phonePlan);
+            }
+
+            // 이벤트 발행
+            publishEvent(savedPlan, savedPlan.getUserId(), planEventProducer);
+
             return savedPlan;
         } catch (Exception e) {
             log.error("요금제 변경 실패: userId={}, error={}", phonePlan.getUserId(), e.getMessage(), e);
             throw new RuntimeException("요금제 변경 중 오류가 발생했습니다", e);
         }
+    }
+
+    private void updateExistingPlan(PhonePlan existingPlan, PhonePlan newPlan) {
+        existingPlan.setPlanName(newPlan.getPlanName());
+        existingPlan.setDataAllowance(newPlan.getDataAllowance());
+        existingPlan.setCallMinutes(newPlan.getCallMinutes());
+        existingPlan.setMessageCount(newPlan.getMessageCount());
+        existingPlan.setMonthlyFee(newPlan.getMonthlyFee());
+        existingPlan.setStatus(newPlan.getStatus() == null ? existingPlan.getStatus() : newPlan.getStatus());
     }
 
     public UsageUpdateResponse updateUsage(UsageUpdateRequest request) {
@@ -74,7 +100,12 @@ public class PhonePlanCommandService {
 
     private void publishEvent(Object event, String partitionKey, EventHubProducerClient producer) {
         try {
-            //순서보장을 위해 user id로 partition을 나눔
+            /*
+            순서 보장을 위해 user id를 해싱하여 파티션을 나눔
+            동일한 파티션으로 가게 하여 처리순서 보장을 하게 됨
+            파티션키 미 지정시 round robin방식으로 랜덤하게 파티션이 배정됨
+            파티션은 물리적 분할 요소가 아니라 논리적 분할 요소임
+            */
             CreateBatchOptions options = new CreateBatchOptions()
                     .setPartitionKey(partitionKey);
 
