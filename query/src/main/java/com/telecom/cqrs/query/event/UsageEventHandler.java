@@ -73,16 +73,52 @@ public class UsageEventHandler {
 
     private void handleUsageEvent(UsageUpdatedEvent event) {
         try {
+            // 들어오는 이벤트 데이터 로깅
+            log.info("Received usage event: [userId={}, dataUsage={}, callUsage={}, messageUsage={}]",
+                    event.getUserId(),
+                    event.getDataUsage(),
+                    event.getCallUsage(),
+                    event.getMessageUsage());
+
             PhonePlanView view = phonePlanViewRepository.findByUserId(event.getUserId());
             if (view == null) {
-                log.warn("No PhonePlanView found for userId={}, skipping usage update",
-                        event.getUserId());
+                log.warn("No PhonePlanView found for userId={}, skipping usage update", event.getUserId());
                 return;
             }
 
-            updateViewFromEvent(view, event);
+            // 기존 데이터 로깅
+            log.info("Existing phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}]",
+                    view.getUserId(),
+                    view.getPlanName(),
+                    view.getDataAllowance(),
+                    view.getCallMinutes(),
+                    view.getMessageCount(),
+                    view.getMonthlyFee());
+
+            // 사용량만 업데이트 (다른 필드는 기존값 유지)
+            if (event.getDataUsage() != null) {
+                view.setDataUsage(event.getDataUsage());
+            }
+            if (event.getCallUsage() != null) {
+                view.setCallUsage(event.getCallUsage());
+            }
+            if (event.getMessageUsage() != null) {
+                view.setMessageUsage(event.getMessageUsage());
+            }
+
             phonePlanViewRepository.save(view);
-            log.info("Usage updated successfully for userId={}", event.getUserId());
+
+            // 업데이트 후 데이터 로깅
+            log.info("Updated phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}, dataUsage={}, callUsage={}, messageUsage={}]",
+                    view.getUserId(),
+                    view.getPlanName(),
+                    view.getDataAllowance(),
+                    view.getCallMinutes(),
+                    view.getMessageCount(),
+                    view.getMonthlyFee(),
+                    view.getDataUsage(),
+                    view.getCallUsage(),
+                    view.getMessageUsage());
 
         } catch (Exception e) {
             log.error("Error handling usage event for userId={}: {}",
