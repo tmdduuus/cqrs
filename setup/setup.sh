@@ -63,8 +63,8 @@ setup_environment() {
    NAME="${USERID}-cqrs"
    RESOURCE_GROUP="tiu-dgga-rg"
    LOCATION="koreacentral"
-   ACR_NAME="dggacr"
-   AKS_NAME="dgga-aks"
+   ACR_NAME="${USERID}-dggacr"
+   AKS_NAME="${USERID}-aks"
 
    # Namespace에 userid 추가
    DB_NAMESPACE="${USERID}-database"
