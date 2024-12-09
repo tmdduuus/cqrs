@@ -63,7 +63,7 @@ setup_environment() {
    NAME="${USERID}-cqrs"
    RESOURCE_GROUP="tiu-dgga-rg"
    LOCATION="koreacentral"
-   ACR_NAME="${USERID}-dggacr"
+   ACR_NAME="${USERID}cr"
    AKS_NAME="${USERID}-aks"
 
    # Namespace에 userid 추가
@@ -76,6 +76,10 @@ setup_environment() {
 
    POSTGRES_PASSWORD="Passw0rd"
    MONGO_PASSWORD="Passw0rd"
+
+    # Event Hub 설정
+    EVENT_HUB_NS="dgga-eventhub-ns"
+    EVENT_HUB_NAME="phone-plan-events"
 
    LOG_FILE="deployment_${NAME}.log"
 }
@@ -505,55 +509,67 @@ setup_storage() {
 
 # Event Hub 네임스페이스 및 이벤트 허브 생성
 setup_event_hub() {
-    log "Event Hub 확인 중..."
+   log "Event Hub 확인 중..."
 
-    # Event Hub 네임스페이스가 이미 있는지 확인
-    EXISTING_NS=$(az eventhubs namespace show \
-        --name dgga-eventhub-ns \
-        --resource-group $RESOURCE_GROUP \
-        --query name \
-        --output tsv 2>/dev/null)
+   # Event Hub 네임스페이스가 이미 있는지 확인
+   EXISTING_NS=$(az eventhubs namespace show \
+       --name $EVENT_HUB_NS \
+       --resource-group $RESOURCE_GROUP \
+       --query name \
+       --output tsv 2>/dev/null)
 
-    if [ -z "$EXISTING_NS" ]; then
-        log "공용 Event Hub 네임스페이스 생성 중... (약 2-3분 소요)"
-        az eventhubs namespace create \
-            --name dgga-eventhub-ns \
-            --resource-group $RESOURCE_GROUP \
-            --location $LOCATION \
-            --sku Basic
-        check_error "Event Hub 네임스페이스 생성 실패"
+   if [ -z "$EXISTING_NS" ]; then
+       log "공용 Event Hub 네임스페이스 생성 중... (약 2-3분 소요)"
+       az eventhubs namespace create \
+           --name $EVENT_HUB_NS \
+           --resource-group $RESOURCE_GROUP \
+           --location $LOCATION \
+           --sku Basic
+       check_error "Event Hub 네임스페이스 생성 실패"
+   else
+       log "기존 Event Hub 네임스페이스 사용"
+   fi
 
-        log "Event Hub 생성 중... (약 1-2분 소요)"
-        az eventhubs eventhub create \
-            --name phone-plan-events \
-            --namespace-name dgga-eventhub-ns \
-            --resource-group $RESOURCE_GROUP \
-            --partition-count 1 \
-            --cleanup-policy Delete \
-            --retention-time 24
-        check_error "Event Hub 생성 실패"
-    else
-        log "기존 Event Hub 사용"
-    fi
+   # Event Hub가 존재하는지 확인
+   EXISTING_HUB=$(az eventhubs eventhub show \
+       --name $EVENT_HUB_NAME \
+       --namespace-name $EVENT_HUB_NS \
+       --resource-group $RESOURCE_GROUP \
+       --query name \
+       --output tsv 2>/dev/null)
 
-    log "Event Hub 연결 문자열 가져오는 중..."
-    # 연결 문자열 가져오기
-    CONNECTION_STRING=$(az eventhubs namespace authorization-rule keys list \
-        --resource-group $RESOURCE_GROUP \
-        --namespace-name dgga-eventhub-ns \
-        --name RootManageSharedAccessKey \
-        --query primaryConnectionString -o tsv)
-    check_error "Event Hub 연결 문자열 가져오기 실패"
+   if [ -z "$EXISTING_HUB" ]; then
+       log "Event Hub 생성 중... (약 1-2분 소요)"
+       az eventhubs eventhub create \
+           --name $EVENT_HUB_NAME \
+           --namespace-name $EVENT_HUB_NS \
+           --resource-group $RESOURCE_GROUP \
+           --partition-count 1 \
+           --cleanup-policy Delete \
+           --retention-time 24
+       check_error "Event Hub 생성 실패"
+   else
+       log "기존 Event Hub 사용"
+   fi
 
-    # Secret으로 저장
-    log "Event Hub 연결 정보를 Secret으로 저장 중..."
-    kubectl create secret generic eventhub-secret \
-        --namespace $APP_NAMESPACE \
-        --from-literal=connection-string="$CONNECTION_STRING" \
-        2>/dev/null || true
-    check_error "Event Hub Secret 저장 실패"
+   log "Event Hub 연결 문자열 가져오는 중..."
+   # 연결 문자열 가져오기
+   CONNECTION_STRING=$(az eventhubs namespace authorization-rule keys list \
+       --resource-group $RESOURCE_GROUP \
+       --namespace-name $EVENT_HUB_NS \
+       --name RootManageSharedAccessKey \
+       --query primaryConnectionString -o tsv)
+   check_error "Event Hub 연결 문자열 가져오기 실패"
 
-    log "Event Hub 설정 완료"
+   # Secret으로 저장
+   log "Event Hub 연결 정보를 Secret으로 저장 중..."
+   kubectl create secret generic eventhub-secret \
+       --namespace $APP_NAMESPACE \
+       --from-literal=connection-string="$CONNECTION_STRING" \
+       2>/dev/null || true
+   check_error "Event Hub Secret 저장 실패"
+
+   log "Event Hub 설정 완료"
 }
 
 deploy_application() {
@@ -636,7 +652,7 @@ spec:
              name: eventhub-secret
              key: connection-string
        - name: EVENT_HUB_NAMESPACE
-         value: "dgga-eventhub-ns"
+         value: ${EVENT_HUB_NS}
 
        resources:
          requests:
@@ -704,7 +720,7 @@ spec:
               name: eventhub-secret
               key: connection-string
        - name: EVENT_HUB_NAMESPACE
-         value: "dgga-eventhub-ns"
+         value: "$EVENT_HUB_NS"
 
        resources:
          requests:
