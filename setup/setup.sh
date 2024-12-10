@@ -84,6 +84,13 @@ setup_environment() {
    LOG_FILE="deployment_${NAME}.log"
 }
 
+# AKS 자격증명 가져오기
+setup_aks() {
+   # AKS 자격 증명 가져오기
+    az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME
+    check_error "AKS 자격 증명 가져오기 실패"
+}
+
 # ACR pull 권한 설정
 setup_acr_permission() {
     log "ACR pull 권한 확인 중..."
@@ -93,8 +100,8 @@ setup_acr_permission() {
         --name $AKS_NAME \
         --resource-group $RESOURCE_GROUP \
         --query servicePrincipalProfile.clientId -o tsv)
-
-    if [ "$SP_ID" = "msi" ] || [ "$SP_ID" = "null" ]; then
+    log "SP_ID-->${SP_ID}"
+    if [ -z "${SP_ID}" ]; then
         log "AKS가 Managed Identity를 사용하고 있습니다."
         # ACR 권한이 이미 있다고 가정하고 진행
         log "ACR pull 권한이 이미 설정되어 있다고 가정합니다."
@@ -109,7 +116,7 @@ setup_acr_permission() {
         az aks update \
             --name $AKS_NAME \
             --resource-group $RESOURCE_GROUP \
-            --attach-acr $ACR_ID
+            --attach-acr $ACR_ID 2>/dev/null || true
         check_error "ACR pull 권한 부여 실패"
     fi
 }
@@ -799,6 +806,9 @@ main() {
    # 환경 변수 설정
    setup_environment "$1"
    cleanup_application
+
+   # AKS 권한 취득
+   setup_aks
 
    # ACR pull 권한 설정
    setup_acr_permission
