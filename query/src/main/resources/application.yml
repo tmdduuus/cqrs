@@ -7,18 +7,23 @@ spring:
     mongodb:
       uri: mongodb://${MONGODB_USER:mongodb}:${MONGODB_PASSWORD}@${MONGODB_HOST:localhost}:${MONGODB_PORT:27017}/${MONGODB_DB:telecomdb}?authSource=admin
 
-  # Event Hub 설정
-  kafka:
-    properties:
-      security.protocol: SASL_SSL
-      sasl.mechanism: PLAIN
-      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="${EVENT_HUB_CONNECTION_STRING}";
-    bootstrap-servers: ${EVENT_HUB_NAMESPACE}.servicebus.windows.net:9093
+# Event Hub 설정
+eventhub:
+  connection-string: ${EVENT_HUB_CONNECTION_STRING}
+  namespace: ${EVENT_HUB_NAMESPACE}
+  plan-hub-name: ${EVENT_HUB_PLAN_NAME:phone-plan-events}
+  usage-hub-name: ${EVENT_HUB_USAGE_NAME:phone-usage-events}
+  plan-consumer-group: ${EVENT_HUB_PLAN_GROUP:plan-consumer}
+  usage-consumer-group: ${EVENT_HUB_USAGE_GROUP:usage-consumer}
+  batch-size: 100
+  checkpoint-interval: 5000
 
+# Azure Storage 설정
 azure:
   storage:
     connection-string: ${STORAGE_CONNECTION_STRING:UseDevelopmentStorage=true}
-    name: phone-plan-events
+    plan-container: plan-checkpoints
+    usage-container: usage-checkpoints
 
 # Swagger 설정
 springdoc:
@@ -27,12 +32,28 @@ springdoc:
   api-docs:
     path: /api-docs
 
-# 서버 포트 설정 (spring 설정과 같은 레벨로 이동)
+# 서버 포트 설정
 server:
   port: ${SERVER_PORT:8080}
 
+# 모니터링 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
 
+# 로깅 설정
 logging:
   level:
-    com.telecom: TRACE
-    org.hibernate.SQL: TRACE
+    root: INFO
+    com.telecom.cqrs: ${LOG_LEVEL:INFO}
+    com.azure.messaging.eventhubs: INFO
+    org.hibernate.SQL: ${LOG_LEVEL:INFO}
+    org.springframework.data.mongodb: ${LOG_LEVEL:INFO}

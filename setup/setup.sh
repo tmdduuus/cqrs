@@ -519,7 +519,7 @@ setup_storage() {
 setup_event_hub() {
    log "Event Hub 확인 중..."
 
-   # Event Hub 네임스페이스가 이미 있는지 확인
+   # Event Hub 네임스페이스 생성/확인 부분은 동일
    EXISTING_NS=$(az eventhubs namespace show \
        --name $EVENT_HUB_NS \
        --resource-group $RESOURCE_GROUP \
@@ -538,26 +538,46 @@ setup_event_hub() {
        log "기존 Event Hub 네임스페이스 사용"
    fi
 
-   # Event Hub가 존재하는지 확인
-   EXISTING_HUB=$(az eventhubs eventhub show \
-       --name $EVENT_HUB_NAME \
+   # Plan 변경 이벤트용 Event Hub
+   PLAN_HUB_NAME="${EVENT_HUB_NAME}-plan"
+   EXISTING_PLAN_HUB=$(az eventhubs eventhub show \
+       --name $PLAN_HUB_NAME \
        --namespace-name $EVENT_HUB_NS \
        --resource-group $RESOURCE_GROUP \
        --query name \
        --output tsv 2>/dev/null)
 
-   if [ -z "$EXISTING_HUB" ]; then
-       log "Event Hub 생성 중... (약 1-2분 소요)"
+   if [ -z "$EXISTING_PLAN_HUB" ]; then
+       log "Plan Event Hub 생성 중..."
        az eventhubs eventhub create \
-           --name $EVENT_HUB_NAME \
+           --name $PLAN_HUB_NAME \
            --namespace-name $EVENT_HUB_NS \
            --resource-group $RESOURCE_GROUP \
            --partition-count 1 \
            --cleanup-policy Delete \
            --retention-time 24
-       check_error "Event Hub 생성 실패"
-   else
-       log "기존 Event Hub 사용"
+       check_error "Plan Event Hub 생성 실패"
+   fi
+
+   # Usage 업데이트 이벤트용 Event Hub
+   USAGE_HUB_NAME="${EVENT_HUB_NAME}-usage"
+   EXISTING_USAGE_HUB=$(az eventhubs eventhub show \
+       --name $USAGE_HUB_NAME \
+       --namespace-name $EVENT_HUB_NS \
+       --resource-group $RESOURCE_GROUP \
+       --query name \
+       --output tsv 2>/dev/null)
+
+   if [ -z "$EXISTING_USAGE_HUB" ]; then
+       log "Usage Event Hub 생성 중..."
+       az eventhubs eventhub create \
+           --name $USAGE_HUB_NAME \
+           --namespace-name $EVENT_HUB_NS \
+           --resource-group $RESOURCE_GROUP \
+           --partition-count 1 \
+           --cleanup-policy Delete \
+           --retention-time 24
+       check_error "Usage Event Hub 생성 실패"
    fi
 
    log "Event Hub 연결 문자열 가져오는 중..."
@@ -569,16 +589,19 @@ setup_event_hub() {
        --query primaryConnectionString -o tsv)
    check_error "Event Hub 연결 문자열 가져오기 실패"
 
-   # Secret으로 저장
+   # Secret으로 저장 - Event Hub 이름도 함께 저장
    log "Event Hub 연결 정보를 Secret으로 저장 중..."
    kubectl create secret generic eventhub-secret \
        --namespace $APP_NAMESPACE \
        --from-literal=connection-string="$CONNECTION_STRING" \
+       --from-literal=plan-hub-name="$PLAN_HUB_NAME" \
+       --from-literal=usage-hub-name="$USAGE_HUB_NAME" \
        2>/dev/null || true
    check_error "Event Hub Secret 저장 실패"
 
    log "Event Hub 설정 완료"
 }
+
 
 deploy_application() {
    log "애플리케이션 배포를 위한 ConfigMap 생성 중..."
@@ -610,8 +633,9 @@ data:
   JPA_DDL_AUTO: "update"
   JPA_SHOW_SQL: "false"
 
-  # Kafka 설정
-  KAFKA_SERVERS: "${NAME}-kafka.${APP_NAMESPACE}:9092"
+  # Event Hub 설정
+  EVENT_HUB_PLAN_NAME: "${EVENT_HUB_NAME}-plan"
+  EVENT_HUB_USAGE_NAME: "${EVENT_HUB_NAME}-usage"
 EOF
 
    log "애플리케이션 배포 중..."
@@ -661,7 +685,6 @@ spec:
              key: connection-string
        - name: EVENT_HUB_NAMESPACE
          value: ${EVENT_HUB_NS}
-
        resources:
          requests:
            cpu: "250m"
@@ -729,7 +752,10 @@ spec:
               key: connection-string
        - name: EVENT_HUB_NAMESPACE
          value: "$EVENT_HUB_NS"
-
+       - name: EVENT_HUB_PLAN_GROUP
+         value: "plan-consumer"
+       - name: EVENT_HUB_USAGE_GROUP
+         value: "usage-consumer"
        resources:
          requests:
            cpu: "250m"

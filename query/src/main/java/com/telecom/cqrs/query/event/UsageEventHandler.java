@@ -1,4 +1,3 @@
-// UsageEventHandler.java
 package com.telecom.cqrs.query.event;
 
 import com.azure.messaging.eventhubs.EventProcessorClient;
@@ -7,22 +6,33 @@ import com.azure.messaging.eventhubs.models.EventContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.telecom.cqrs.common.event.UsageUpdatedEvent;
 import com.telecom.cqrs.query.domain.PhonePlanView;
+import com.telecom.cqrs.query.exception.EventProcessingException;
 import com.telecom.cqrs.query.repository.PhonePlanViewRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
-public class UsageEventHandler {
+public class UsageEventHandler implements Consumer<EventContext> {
     private final PhonePlanViewRepository phonePlanViewRepository;
     private final ObjectMapper objectMapper;
+    private final RetryTemplate retryTemplate;
+    private final AtomicLong eventsProcessed = new AtomicLong(0);
+    private final AtomicLong eventErrors = new AtomicLong(0);
     private EventProcessorClient eventProcessorClient;
 
     public UsageEventHandler(
             PhonePlanViewRepository phonePlanViewRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            RetryTemplate retryTemplate) {
         this.phonePlanViewRepository = phonePlanViewRepository;
         this.objectMapper = objectMapper;
+        this.retryTemplate = retryTemplate;
     }
 
     public void setEventProcessorClient(EventProcessorClient client) {
@@ -43,85 +53,62 @@ public class UsageEventHandler {
         }
     }
 
-    public void processEvent(EventContext eventContext) {
+    @Override
+    @Transactional
+    public void accept(EventContext eventContext) {
         String eventData = eventContext.getEventData().getBodyAsString();
-        String eventType = eventContext.getEventData()
-                .getProperties()
-                .get("type")
-                .toString();
 
         try {
-            log.info("Processing usage event: type={}, partition={}, offset={}",
-                    eventType,
+            log.info("Processing usage event: partition={}, offset={}",
                     eventContext.getPartitionContext().getPartitionId(),
                     eventContext.getEventData().getSequenceNumber());
 
-            // 이벤트 타입 검증
-            if (!"USAGE_UPDATED".equals(eventType)) {
-                log.warn("Skipping non-usage event: {}", eventType);
-                eventContext.updateCheckpoint();
-                return;
+            UsageUpdatedEvent event = parseEvent(eventData);
+            if (event != null) {
+                processUserEvent(event);
+                eventsProcessed.incrementAndGet();
             }
-            log.info("*************** Start: USAGE ****************");
-            UsageUpdatedEvent event = objectMapper.readValue(eventData, UsageUpdatedEvent.class);
-            handleUsageEvent(event);
             eventContext.updateCheckpoint();
-
-            log.info("Successfully processed usage event for userId={}", event.getUserId());
-            log.info("*************** End: Phone Plan ****************");
 
         } catch (Exception e) {
             log.error("Failed to process usage event: {}", eventData, e);
+            eventErrors.incrementAndGet();
         }
     }
 
-    public void processError(ErrorContext errorContext) {
-        log.error("Error in usage event processor: {}",
-                errorContext.getThrowable().getMessage(),
-                errorContext.getThrowable());
-    }
-
-    private void handleUsageEvent(UsageUpdatedEvent event) {
+    private UsageUpdatedEvent parseEvent(String eventData) {
         try {
-            log.info("Received usage event: [userId={}, dataUsage={}, callUsage={}, messageUsage={}]",
-                    event.getUserId(),
-                    event.getDataUsage(),
-                    event.getCallUsage(),
-                    event.getMessageUsage());
-
-            PhonePlanView view = phonePlanViewRepository.findByUserId(event.getUserId());
-            if (view == null) {
-                log.warn("No PhonePlanView found for userId={}, skipping usage update", event.getUserId());
-                return;
-            }
-
-            log.info("Existing phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}]",
-                    view.getUserId(),
-                    view.getPlanName(),
-                    view.getDataAllowance(),
-                    view.getCallMinutes(),
-                    view.getMessageCount(),
-                    view.getMonthlyFee());
-
-            updateViewFromEvent(view, event);
-            phonePlanViewRepository.save(view);
-
-            log.info("Updated phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}, dataUsage={}, callUsage={}, messageUsage={}]",
-                    view.getUserId(),
-                    view.getPlanName(),
-                    view.getDataAllowance(),
-                    view.getCallMinutes(),
-                    view.getMessageCount(),
-                    view.getMonthlyFee(),
-                    view.getDataUsage(),
-                    view.getCallUsage(),
-                    view.getMessageUsage());
-
+            return objectMapper.readValue(eventData, UsageUpdatedEvent.class);
         } catch (Exception e) {
-            log.error("Error handling usage event for userId={}: {}",
-                    event.getUserId(), e.getMessage(), e);
-            throw e;
+            log.error("Error parsing usage event: {}", e.getMessage(), e);
+            return null;
         }
+    }
+
+    private void processUserEvent(UsageUpdatedEvent event) {
+        try {
+            retryTemplate.execute(context -> {
+                PhonePlanView view = getPhonePlanView(event.getUserId());
+                if (view != null) {
+                    updateViewFromEvent(view, event);
+                    phonePlanViewRepository.save(view);
+                    log.info("Successfully processed usage event for userId={}", event.getUserId());
+                }
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("Error processing usage event for userId={}: {}",
+                    event.getUserId(), e.getMessage(), e);
+            throw new EventProcessingException("Failed to process usage event", e);
+        }
+    }
+
+    private PhonePlanView getPhonePlanView(String userId) {
+        PhonePlanView view = phonePlanViewRepository.findByUserId(userId);
+        if (view == null) {
+            log.warn("No PhonePlanView found for userId={}, skipping usage update", userId);
+        }
+        return view;
     }
 
     private void updateViewFromEvent(PhonePlanView view, UsageUpdatedEvent event) {
@@ -134,6 +121,22 @@ public class UsageEventHandler {
         if (event.getMessageUsage() != null) {
             view.setMessageUsage(event.getMessageUsage());
         }
+    }
+
+    public void processError(ErrorContext errorContext) {
+        log.error("Error in usage event processor: {}, {}",
+                errorContext.getThrowable().getMessage(),
+                errorContext.getPartitionContext().getPartitionId(),
+                errorContext.getThrowable());
+        eventErrors.incrementAndGet();
+    }
+
+    public long getProcessedEventCount() {
+        return eventsProcessed.get();
+    }
+
+    public long getErrorCount() {
+        return eventErrors.get();
     }
 
     public void cleanup() {

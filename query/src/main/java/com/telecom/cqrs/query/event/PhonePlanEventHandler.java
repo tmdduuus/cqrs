@@ -1,4 +1,3 @@
-// PhonePlanEventHandler.java
 package com.telecom.cqrs.query.event;
 
 import com.azure.messaging.eventhubs.EventProcessorClient;
@@ -7,22 +6,33 @@ import com.azure.messaging.eventhubs.models.EventContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.telecom.cqrs.common.event.PhonePlanEvent;
 import com.telecom.cqrs.query.domain.PhonePlanView;
+import com.telecom.cqrs.query.exception.EventProcessingException;
 import com.telecom.cqrs.query.repository.PhonePlanViewRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
-public class PhonePlanEventHandler {
+public class PhonePlanEventHandler implements Consumer<EventContext> {
     private final PhonePlanViewRepository phonePlanViewRepository;
     private final ObjectMapper objectMapper;
+    private final RetryTemplate retryTemplate;
+    private final AtomicLong eventsProcessed = new AtomicLong(0);
+    private final AtomicLong eventErrors = new AtomicLong(0);
     private EventProcessorClient eventProcessorClient;
 
     public PhonePlanEventHandler(
             PhonePlanViewRepository phonePlanViewRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            RetryTemplate retryTemplate) {
         this.phonePlanViewRepository = phonePlanViewRepository;
         this.objectMapper = objectMapper;
+        this.retryTemplate = retryTemplate;
     }
 
     public void setEventProcessorClient(EventProcessorClient client) {
@@ -32,71 +42,74 @@ public class PhonePlanEventHandler {
 
     public void startEventProcessing() {
         if (eventProcessorClient != null) {
-            log.info("Starting PhonePlan Event Processor...");
+            log.info("Starting Plan Event Processor...");
             try {
                 eventProcessorClient.start();
-                log.info("PhonePlan Event Processor started successfully");
+                log.info("Plan Event Processor started successfully");
             } catch (Exception e) {
-                log.error("Failed to start PhonePlan Event Processor: {}", e.getMessage(), e);
+                log.error("Failed to start Plan Event Processor: {}", e.getMessage(), e);
                 throw new RuntimeException("Failed to start event processor", e);
             }
         }
     }
 
-    public void processEvent(EventContext eventContext) {
+    @Override
+    @Transactional
+    public void accept(EventContext eventContext) {
         String eventData = eventContext.getEventData().getBodyAsString();
-        String eventType = eventContext.getEventData()
-                .getProperties()
-                .get("type")
-                .toString();
 
         try {
-            log.info("Processing plan event: type={}, partition={}, offset={}",
-                    eventType,
+            log.info("Processing plan event: partition={}, offset={}",
                     eventContext.getPartitionContext().getPartitionId(),
                     eventContext.getEventData().getSequenceNumber());
 
-            // 이벤트 타입 검증
-            if (!"PLAN_CHANGED".equals(eventType)) {
-                log.warn("Skipping non-plan event: {}", eventType);
-                eventContext.updateCheckpoint();
-                return;
+            PhonePlanEvent event = parseEvent(eventData);
+            if (event != null) {
+                processUserEvent(event);
+                eventsProcessed.incrementAndGet();
             }
-            log.info("*************** Start: Phone Plan ****************");
-            PhonePlanEvent event = objectMapper.readValue(eventData, PhonePlanEvent.class);
-            handlePhonePlanEvent(event);
             eventContext.updateCheckpoint();
 
-            log.info("Successfully processed plan event for userId={}", event.getUserId());
-            log.info("*************** End: Phone Plan ****************");
         } catch (Exception e) {
             log.error("Failed to process plan event: {}", eventData, e);
+            eventErrors.incrementAndGet();
         }
     }
 
-    public void processError(ErrorContext errorContext) {
-        log.error("Error in plan event processor: {}",
-                errorContext.getThrowable().getMessage(),
-                errorContext.getThrowable());
-    }
-
-    private void handlePhonePlanEvent(PhonePlanEvent event) {
+    private PhonePlanEvent parseEvent(String eventData) {
         try {
-            PhonePlanView view = phonePlanViewRepository.findByUserId(event.getUserId());
-            if (view == null) {
-                view = new PhonePlanView();
-                view.setUserId(event.getUserId());
-            }
-
-            updateViewFromEvent(view, event);
-            phonePlanViewRepository.save(view);
-            log.info("PhonePlanView saved successfully for userId={}", event.getUserId());
-
+            return objectMapper.readValue(eventData, PhonePlanEvent.class);
         } catch (Exception e) {
-            log.error("Error handling plan event for userId={}: {}",
-                    event.getUserId(), e.getMessage(), e);
-            throw e;
+            log.error("Error parsing plan event: {}", e.getMessage(), e);
+            return null;
         }
+    }
+
+    private void processUserEvent(PhonePlanEvent event) {
+        try {
+            retryTemplate.execute(context -> {
+                PhonePlanView view = getOrCreatePhonePlanView(event.getUserId());
+                updateViewFromEvent(view, event);
+                phonePlanViewRepository.save(view);
+                log.info("Successfully processed plan event for userId={}: plan={}",
+                        event.getUserId(), event.getPlanName());
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("Error processing plan event for userId={}: {}",
+                    event.getUserId(), e.getMessage(), e);
+            throw new EventProcessingException("Failed to process plan event", e);
+        }
+    }
+
+    private PhonePlanView getOrCreatePhonePlanView(String userId) {
+        PhonePlanView view = phonePlanViewRepository.findByUserId(userId);
+        if (view == null) {
+            view = new PhonePlanView();
+            view.setUserId(userId);
+            log.info("Creating new PhonePlanView for userId={}", userId);
+        }
+        return view;
     }
 
     private void updateViewFromEvent(PhonePlanView view, PhonePlanEvent event) {
@@ -108,14 +121,30 @@ public class PhonePlanEventHandler {
         view.setStatus(event.getStatus());
     }
 
+    public void processError(ErrorContext errorContext) {
+        log.error("Error in plan event processor: {}, {}",
+                errorContext.getThrowable().getMessage(),
+                errorContext.getPartitionContext().getPartitionId(),
+                errorContext.getThrowable());
+        eventErrors.incrementAndGet();
+    }
+
+    public long getProcessedEventCount() {
+        return eventsProcessed.get();
+    }
+
+    public long getErrorCount() {
+        return eventErrors.get();
+    }
+
     public void cleanup() {
         if (eventProcessorClient != null) {
             try {
-                log.info("Stopping PhonePlan Event Processor...");
+                log.info("Stopping Plan Event Processor...");
                 eventProcessorClient.stop();
-                log.info("PhonePlan Event Processor stopped");
+                log.info("Plan Event Processor stopped");
             } catch (Exception e) {
-                log.error("Error stopping PhonePlan Event Processor: {}", e.getMessage(), e);
+                log.error("Error stopping Plan Event Processor: {}", e.getMessage(), e);
             }
         }
     }
