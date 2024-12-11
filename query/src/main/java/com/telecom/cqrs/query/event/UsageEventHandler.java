@@ -74,7 +74,7 @@ public class UsageEventHandler {
     private void handleUsageEvent(UsageUpdatedEvent event) {
         try {
             // 들어오는 이벤트 데이터 로깅
-            log.info("Received usage event: [userId={}, dataUsage={}, callUsage={}, messageUsage={}]",
+            log.info("*************** Received usage event: [userId={}, dataUsage={}, callUsage={}, messageUsage={}]",
                     event.getUserId(),
                     event.getDataUsage(),
                     event.getCallUsage(),
@@ -87,7 +87,7 @@ public class UsageEventHandler {
             }
 
             // 기존 데이터 로깅
-            log.info("Existing phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}]",
+            log.info("*************** Existing phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}]",
                     view.getUserId(),
                     view.getPlanName(),
                     view.getDataAllowance(),
@@ -109,7 +109,7 @@ public class UsageEventHandler {
             phonePlanViewRepository.save(view);
 
             // 업데이트 후 데이터 로깅
-            log.info("Updated phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}, dataUsage={}, callUsage={}, messageUsage={}]",
+            log.info("*************** Updated phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}, dataUsage={}, callUsage={}, messageUsage={}]",
                     view.getUserId(),
                     view.getPlanName(),
                     view.getDataAllowance(),
