@@ -14,14 +14,11 @@ import jakarta.annotation.PostConstruct;
 @Slf4j
 @Configuration
 public class EventHubConfig {
-    @Value("${EVENT_HUB_CONNECTION_STRING}")
-    private String connectionString;
+    @Value("${EVENT_HUB_PLAN_CONNECTION_STRING}")
+    private String planConnectionString;
 
-    @Value("${EVENT_HUB_PLAN_GROUP:plan-consumer}")
-    private String planConsumerGroup;
-
-    @Value("${EVENT_HUB_USAGE_GROUP:usage-consumer}")
-    private String usageConsumerGroup;
+    @Value("${EVENT_HUB_USAGE_CONNECTION_STRING}")
+    private String usageConnectionString;
 
     @Value("${EVENT_HUB_PLAN_NAME}")
     private String planHubName;
@@ -45,16 +42,20 @@ public class EventHubConfig {
     @PostConstruct
     public void validateConfig() {
         log.info("Validating Event Hub configuration...");
+        validateConnectionString("planConnectionString", planConnectionString);
+        validateConnectionString("usageConnectionString", usageConnectionString);
+        validateNotEmpty("planHubName", planHubName);
+        validateNotEmpty("usageHubName", usageHubName);
+        log.info("Event Hub configuration validated successfully");
+    }
+
+    private void validateConnectionString(String name, String connectionString) {
         if (connectionString == null || connectionString.trim().isEmpty()
                 || !connectionString.contains("Endpoint=")
                 || !connectionString.contains("SharedAccessKeyName=")) {
-            throw new IllegalStateException("Invalid Event Hub connection string format");
+            throw new IllegalStateException(
+                    String.format("Invalid Event Hub connection string format for %s", name));
         }
-        validateNotEmpty("planHubName", planHubName);
-        validateNotEmpty("usageHubName", usageHubName);
-        validateNotEmpty("planConsumerGroup", planConsumerGroup);
-        validateNotEmpty("usageConsumerGroup", usageConsumerGroup);
-        log.info("Event Hub configuration validated successfully");
     }
 
     private void validateNotEmpty(String name, String value) {
@@ -66,15 +67,14 @@ public class EventHubConfig {
 
     @Bean
     public EventProcessorClient usageEventProcessor() {
-        log.info("Creating usage event processor with hub: {}, consumer group: {}",
-                usageHubName, usageConsumerGroup);
+        log.info("Creating usage event processor with hub: {}", usageHubName);
 
         var blobClient = blobStorageConfig
                 .getBlobContainerAsyncClient(BlobStorageContainers.USAGE_CONTAINER);
 
         EventProcessorClient client = new EventProcessorClientBuilder()
-                .connectionString(connectionString, usageHubName)
-                .consumerGroup(usageConsumerGroup)
+                .connectionString(usageConnectionString, usageHubName)
+                .consumerGroup("$Default")
                 .checkpointStore(new BlobCheckpointStore(blobClient))
                 .processEvent(usageEventHandler)
                 .processError(usageEventHandler::processError)
@@ -86,15 +86,14 @@ public class EventHubConfig {
 
     @Bean
     public EventProcessorClient planEventProcessor() {
-        log.info("Creating plan event processor with hub: {}, consumer group: {}",
-                planHubName, planConsumerGroup);
+        log.info("Creating plan event processor with hub: {}", planHubName);
 
         var blobClient = blobStorageConfig
                 .getBlobContainerAsyncClient(BlobStorageContainers.PLAN_CONTAINER);
 
         EventProcessorClient client = new EventProcessorClientBuilder()
-                .connectionString(connectionString, planHubName)
-                .consumerGroup(planConsumerGroup)
+                .connectionString(planConnectionString, planHubName)
+                .consumerGroup("$Default")
                 .checkpointStore(new BlobCheckpointStore(blobClient))
                 .processEvent(planEventHandler)
                 .processError(planEventHandler::processError)

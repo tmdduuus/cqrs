@@ -19,10 +19,11 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  event-hub:
-    connection-string: ${EVENT_HUB_CONNECTION_STRING}
-    plan-name: ${EVENT_HUB_PLAN_NAME:phone-plan-events}
-    usage-name: ${EVENT_HUB_USAGE_NAME:phone-usage-events}
+event-hub:
+  plan-connection-string: ${EVENT_HUB_PLAN_CONNECTION_STRING}
+  usage-connection-string: ${EVENT_HUB_USAGE_CONNECTION_STRING}
+  plan-name: ${EVENT_HUB_PLAN_NAME:phone-plan-events}
+  usage-name: ${EVENT_HUB_USAGE_NAME:phone-usage-events}
 
 azure:
   storage:

@@ -9,12 +9,10 @@ spring:
 
 # Event Hub 설정
 eventhub:
-  connection-string: ${EVENT_HUB_CONNECTION_STRING}
-  namespace: ${EVENT_HUB_NAMESPACE}
+  plan-connection-string: ${EVENT_HUB_PLAN_CONNECTION_STRING}
+  usage-connection-string: ${EVENT_HUB_USAGE_CONNECTION_STRING}
   plan-hub-name: ${EVENT_HUB_PLAN_NAME:phone-plan-events}
   usage-hub-name: ${EVENT_HUB_USAGE_NAME:phone-usage-events}
-  plan-consumer-group: ${EVENT_HUB_PLAN_GROUP:plan-consumer}
-  usage-consumer-group: ${EVENT_HUB_USAGE_GROUP:usage-consumer}
   batch-size: 100
   checkpoint-interval: 5000
 

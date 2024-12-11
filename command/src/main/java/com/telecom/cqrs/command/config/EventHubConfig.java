@@ -12,35 +12,31 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @Slf4j
 public class EventHubConfig {
+    @Value("${EVENT_HUB_PLAN_CONNECTION_STRING}")
+    private String planConnectionString;
 
-    @Value("${EVENT_HUB_CONNECTION_STRING}")
-    private String connectionString;
+    @Value("${EVENT_HUB_USAGE_CONNECTION_STRING}")
+    private String usageConnectionString;
+
     @Value("${EVENT_HUB_PLAN_NAME}")
-    private String eventHubPlanName;
-    @Value("${EVENT_HUB_USAGE_NAME}")
-    private String eventHubUsageName;
+    private String planEventHubName;
 
-    @PostConstruct
-    public void validateConfig() {
-        if (connectionString == null || connectionString.trim().isEmpty()) {
-            throw new IllegalStateException("Event Hub connection string not configured");
-        }
-        log.info("Event Hub connection string validated");
-    }
+    @Value("${EVENT_HUB_USAGE_NAME}")
+    private String usageEventHubName;
 
     @Bean(name = "usageEventProducer")
     public EventHubProducerClient usageEventProducer() {
-        log.info("Creating Usage Event producer for hub: {}", eventHubUsageName);
+        log.info("Creating Usage Event producer for hub: {}", usageEventHubName);
         return new EventHubClientBuilder()
-                .connectionString(connectionString, eventHubUsageName)
+                .connectionString(usageConnectionString, usageEventHubName)
                 .buildProducerClient();
     }
 
     @Bean(name = "planEventProducer")
     public EventHubProducerClient planEventProducer() {
-        log.info("Creating Plan Event producer for hub: {}", eventHubPlanName);
+        log.info("Creating Plan Event producer for hub: {}", planEventHubName);
         return new EventHubClientBuilder()
-                .connectionString(connectionString, eventHubPlanName)
+                .connectionString(planConnectionString, planEventHubName)
                 .buildProducerClient();
     }
 }

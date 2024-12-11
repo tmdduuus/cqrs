@@ -78,7 +78,8 @@ setup_environment() {
    MONGO_PASSWORD="Passw0rd"
 
    # Event Hub 설정
-   EVENT_HUB_NS="dgga-eventhub-ns"
+   PLAN_EVENT_HUB_NS="${USERID}-eventhub-plan-ns"
+   USAGE_EVENT_HUB_NS="${USERID}-eventhub-usage-ns"
    EVENT_HUB_NAME="phone-plan-events"
    PLAN_HUB_NAME="${EVENT_HUB_NAME}-plan"
    USAGE_HUB_NAME="${EVENT_HUB_NAME}-usage"
@@ -521,29 +522,48 @@ setup_storage() {
 setup_event_hub() {
    log "Event Hub 확인 중..."
 
-   # Event Hub 네임스페이스 생성/확인 부분은 동일
-   EXISTING_NS=$(az eventhubs namespace show \
-       --name $EVENT_HUB_NS \
+   # Plan Event Hub 네임스페이스 생성/확인
+   EXISTING_PLAN_NS=$(az eventhubs namespace show \
+       --name $PLAN_EVENT_HUB_NS \
        --resource-group $RESOURCE_GROUP \
        --query name \
        --output tsv 2>/dev/null)
 
-   if [ -z "$EXISTING_NS" ]; then
-       log "공용 Event Hub 네임스페이스 생성 중... (약 2-3분 소요)"
+   if [ -z "$EXISTING_PLAN_NS" ]; then
+       log "Plan Event Hub 네임스페이스 생성 중... (약 2-3분 소요)"
        az eventhubs namespace create \
-           --name $EVENT_HUB_NS \
+           --name $PLAN_EVENT_HUB_NS \
            --resource-group $RESOURCE_GROUP \
            --location $LOCATION \
            --sku Basic
-       check_error "Event Hub 네임스페이스 생성 실패"
+       check_error "Plan Event Hub 네임스페이스 생성 실패"
    else
-       log "기존 Event Hub 네임스페이스 사용"
+       log "기존 Plan Event Hub 네임스페이스 사용"
    fi
 
-   # Plan 변경 이벤트용 Event Hub
+   # Usage Event Hub 네임스페이스 생성/확인
+   EXISTING_USAGE_NS=$(az eventhubs namespace show \
+       --name $USAGE_EVENT_HUB_NS \
+       --resource-group $RESOURCE_GROUP \
+       --query name \
+       --output tsv 2>/dev/null)
+
+   if [ -z "$EXISTING_USAGE_NS" ]; then
+       log "Usage Event Hub 네임스페이스 생성 중... (약 2-3분 소요)"
+       az eventhubs namespace create \
+           --name $USAGE_EVENT_HUB_NS \
+           --resource-group $RESOURCE_GROUP \
+           --location $LOCATION \
+           --sku Basic
+       check_error "Usage Event Hub 네임스페이스 생성 실패"
+   else
+       log "기존 Usage Event Hub 네임스페이스 사용"
+   fi
+
+   # Plan Event Hub 생성
    EXISTING_PLAN_HUB=$(az eventhubs eventhub show \
        --name $PLAN_HUB_NAME \
-       --namespace-name $EVENT_HUB_NS \
+       --namespace-name $PLAN_EVENT_HUB_NS \
        --resource-group $RESOURCE_GROUP \
        --query name \
        --output tsv 2>/dev/null)
@@ -552,7 +572,7 @@ setup_event_hub() {
        log "Plan Event Hub 생성 중..."
        az eventhubs eventhub create \
            --name $PLAN_HUB_NAME \
-           --namespace-name $EVENT_HUB_NS \
+           --namespace-name $PLAN_EVENT_HUB_NS \
            --resource-group $RESOURCE_GROUP \
            --partition-count 1 \
            --cleanup-policy Delete \
@@ -560,10 +580,10 @@ setup_event_hub() {
        check_error "Plan Event Hub 생성 실패"
    fi
 
-   # Usage 업데이트 이벤트용 Event Hub
+   # Usage Event Hub 생성
    EXISTING_USAGE_HUB=$(az eventhubs eventhub show \
        --name $USAGE_HUB_NAME \
-       --namespace-name $EVENT_HUB_NS \
+       --namespace-name $USAGE_EVENT_HUB_NS \
        --resource-group $RESOURCE_GROUP \
        --query name \
        --output tsv 2>/dev/null)
@@ -572,7 +592,7 @@ setup_event_hub() {
        log "Usage Event Hub 생성 중..."
        az eventhubs eventhub create \
            --name $USAGE_HUB_NAME \
-           --namespace-name $EVENT_HUB_NS \
+           --namespace-name $USAGE_EVENT_HUB_NS \
            --resource-group $RESOURCE_GROUP \
            --partition-count 1 \
            --cleanup-policy Delete \
@@ -581,27 +601,36 @@ setup_event_hub() {
    fi
 
    log "Event Hub 연결 문자열 가져오는 중..."
-   # 연결 문자열 가져오기
-   CONNECTION_STRING=$(az eventhubs namespace authorization-rule keys list \
+   # Plan Event Hub 연결 문자열 가져오기
+   PLAN_CONNECTION_STRING=$(az eventhubs namespace authorization-rule keys list \
        --resource-group $RESOURCE_GROUP \
-       --namespace-name $EVENT_HUB_NS \
+       --namespace-name $PLAN_EVENT_HUB_NS \
        --name RootManageSharedAccessKey \
        --query primaryConnectionString -o tsv)
-   check_error "Event Hub 연결 문자열 가져오기 실패"
+   check_error "Plan Event Hub 연결 문자열 가져오기 실패"
 
-   # Secret으로 저장 - Event Hub 이름도 함께 저장
+   # Usage Event Hub 연결 문자열 가져오기
+   USAGE_CONNECTION_STRING=$(az eventhubs namespace authorization-rule keys list \
+       --resource-group $RESOURCE_GROUP \
+       --namespace-name $USAGE_EVENT_HUB_NS \
+       --name RootManageSharedAccessKey \
+       --query primaryConnectionString -o tsv)
+   check_error "Usage Event Hub 연결 문자열 가져오기 실패"
+
+   # Secret으로 저장
    log "Event Hub 연결 정보를 Secret으로 저장 중..."
    kubectl create secret generic eventhub-secret \
        --namespace $APP_NAMESPACE \
-       --from-literal=connection-string="$CONNECTION_STRING" \
+       --from-literal=plan-connection-string="$PLAN_CONNECTION_STRING" \
+       --from-literal=usage-connection-string="$USAGE_CONNECTION_STRING" \
        --from-literal=plan-hub-name="$PLAN_HUB_NAME" \
        --from-literal=usage-hub-name="$USAGE_HUB_NAME" \
+       --from-literal=consumer-group="\$Default" \
        2>/dev/null || true
    check_error "Event Hub Secret 저장 실패"
 
    log "Event Hub 설정 완료"
 }
-
 
 deploy_application() {
    log "애플리케이션 배포를 위한 ConfigMap 생성 중..."
@@ -634,12 +663,15 @@ data:
   JPA_SHOW_SQL: "false"
 
   # Event Hub 설정
+  EVENT_HUB_PLAN_NS: "${PLAN_EVENT_HUB_NS}"
+  EVENT_HUB_USAGE_NS: "${USAGE_EVENT_HUB_NS}"
   EVENT_HUB_PLAN_NAME: "${PLAN_HUB_NAME}"
   EVENT_HUB_USAGE_NAME: "${USAGE_HUB_NAME}"
 EOF
 
    log "애플리케이션 배포 중..."
 
+   # Command 서비스 Deployment 부분만 수정
    cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
@@ -678,13 +710,21 @@ spec:
            secretKeyRef:
              name: storage-secret
              key: connection-string
-       - name: EVENT_HUB_CONNECTION_STRING
+       # Event Hub 연결 문자열 분리
+       - name: EVENT_HUB_PLAN_CONNECTION_STRING
          valueFrom:
            secretKeyRef:
              name: eventhub-secret
-             key: connection-string
-       - name: EVENT_HUB_NAMESPACE
-         value: ${EVENT_HUB_NS}
+             key: plan-connection-string
+       - name: EVENT_HUB_USAGE_CONNECTION_STRING
+         valueFrom:
+           secretKeyRef:
+             name: eventhub-secret
+             key: usage-connection-string
+       - name: EVENT_HUB_NAMESPACE_PLAN
+         value: "${PLAN_EVENT_HUB_NS}"
+       - name: EVENT_HUB_NAMESPACE_USAGE
+         value: "${USAGE_EVENT_HUB_NS}"
        resources:
          requests:
            cpu: "250m"
@@ -745,17 +785,20 @@ spec:
             secretKeyRef:
               name: storage-secret
               key: connection-string
-       - name: EVENT_HUB_CONNECTION_STRING
+       - name: EVENT_HUB_PLAN_CONNECTION_STRING
          valueFrom:
-            secretKeyRef:
-              name: eventhub-secret
-              key: connection-string
-       - name: EVENT_HUB_NAMESPACE
-         value: "$EVENT_HUB_NS"
-       - name: EVENT_HUB_PLAN_GROUP
-         value: "plan-consumer"
-       - name: EVENT_HUB_USAGE_GROUP
-         value: "usage-consumer"
+           secretKeyRef:
+             name: eventhub-secret
+             key: plan-connection-string
+       - name: EVENT_HUB_USAGE_CONNECTION_STRING
+         valueFrom:
+           secretKeyRef:
+             name: eventhub-secret
+             key: usage-connection-string
+       - name: EVENT_HUB_NAMESPACE_PLAN
+         value: "${PLAN_EVENT_HUB_NS}"
+       - name: EVENT_HUB_NAMESPACE_USAGE
+         value: "${USAGE_EVENT_HUB_NS}"
        resources:
          requests:
            cpu: "250m"
