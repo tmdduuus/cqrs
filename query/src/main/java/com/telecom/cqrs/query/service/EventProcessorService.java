@@ -5,6 +5,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.retry.annotation.Backoff;
 
 @Slf4j
 @Service
@@ -20,12 +22,18 @@ public class EventProcessorService {
     }
 
     @PostConstruct
+    @Retryable(maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
     public void startProcessors() {
         try {
             log.info("Starting event processors...");
+
             usageEventProcessor.start();
+            log.info("Usage Event Processor started successfully");
+
             planEventProcessor.start();
-            log.info("Event processors started successfully");
+            log.info("Plan Event Processor started successfully");
+
+            log.info("All Event processors started successfully");
         } catch (Exception e) {
             log.error("Failed to start event processors: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to start event processors", e);
@@ -36,9 +44,18 @@ public class EventProcessorService {
     public void stopProcessors() {
         try {
             log.info("Stopping event processors...");
-            usageEventProcessor.stop();
-            planEventProcessor.stop();
-            log.info("Event processors stopped successfully");
+
+            if (usageEventProcessor != null) {
+                usageEventProcessor.stop();
+                log.info("Usage Event Processor stopped successfully");
+            }
+
+            if (planEventProcessor != null) {
+                planEventProcessor.stop();
+                log.info("Plan Event Processor stopped successfully");
+            }
+
+            log.info("All Event processors stopped successfully");
         } catch (Exception e) {
             log.error("Error stopping event processors: {}", e.getMessage(), e);
         }

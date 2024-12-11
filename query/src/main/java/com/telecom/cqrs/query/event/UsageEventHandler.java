@@ -12,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.retry.annotation.Backoff;
 
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -36,10 +38,12 @@ public class UsageEventHandler implements Consumer<EventContext> {
     }
 
     public void setEventProcessorClient(EventProcessorClient client) {
+        log.info("Setting Usage Event Processor Client");
         this.eventProcessorClient = client;
         startEventProcessing();
     }
 
+    @Retryable(maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
     public void startEventProcessing() {
         if (eventProcessorClient != null) {
             log.info("Starting Usage Event Processor...");
@@ -50,6 +54,8 @@ public class UsageEventHandler implements Consumer<EventContext> {
                 log.error("Failed to start Usage Event Processor: {}", e.getMessage(), e);
                 throw new RuntimeException("Failed to start event processor", e);
             }
+        } else {
+            log.warn("Usage Event Processor Client is not set");
         }
     }
 
@@ -57,21 +63,24 @@ public class UsageEventHandler implements Consumer<EventContext> {
     @Transactional
     public void accept(EventContext eventContext) {
         String eventData = eventContext.getEventData().getBodyAsString();
+        String partitionId = eventContext.getPartitionContext().getPartitionId();
 
         try {
-            log.info("Processing usage event: partition={}, offset={}",
-                    eventContext.getPartitionContext().getPartitionId(),
-                    eventContext.getEventData().getSequenceNumber());
+            log.debug("Processing usage event: partition={}, offset={}, data={}",
+                    partitionId,
+                    eventContext.getEventData().getSequenceNumber(),
+                    eventData);
 
             UsageUpdatedEvent event = parseEvent(eventData);
             if (event != null) {
                 processUserEvent(event);
                 eventsProcessed.incrementAndGet();
+                eventContext.updateCheckpoint();
+                log.debug("Usage event processed successfully: userId={}", event.getUserId());
             }
-            eventContext.updateCheckpoint();
-
         } catch (Exception e) {
-            log.error("Failed to process usage event: {}", eventData, e);
+            log.error("Failed to process usage event: partition={}, data={}, error={}",
+                    partitionId, eventData, e.getMessage(), e);
             eventErrors.incrementAndGet();
         }
     }
@@ -92,7 +101,7 @@ public class UsageEventHandler implements Consumer<EventContext> {
                 if (view != null) {
                     updateViewFromEvent(view, event);
                     phonePlanViewRepository.save(view);
-                    log.info("Successfully processed usage event for userId={}", event.getUserId());
+                    log.debug("Successfully processed usage event for userId={}", event.getUserId());
                 }
                 return null;
             });

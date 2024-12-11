@@ -45,7 +45,11 @@ public class EventHubConfig {
     @PostConstruct
     public void validateConfig() {
         log.info("Validating Event Hub configuration...");
-        validateNotEmpty("connectionString", connectionString);
+        if (connectionString == null || connectionString.trim().isEmpty()
+                || !connectionString.contains("Endpoint=")
+                || !connectionString.contains("SharedAccessKeyName=")) {
+            throw new IllegalStateException("Invalid Event Hub connection string format");
+        }
         validateNotEmpty("planHubName", planHubName);
         validateNotEmpty("usageHubName", usageHubName);
         validateNotEmpty("planConsumerGroup", planConsumerGroup);
@@ -68,13 +72,16 @@ public class EventHubConfig {
         var blobClient = blobStorageConfig
                 .getBlobContainerAsyncClient(BlobStorageContainers.USAGE_CONTAINER);
 
-        return new EventProcessorClientBuilder()
+        EventProcessorClient client = new EventProcessorClientBuilder()
                 .connectionString(connectionString, usageHubName)
                 .consumerGroup(usageConsumerGroup)
                 .checkpointStore(new BlobCheckpointStore(blobClient))
-                .processEvent(usageEventHandler)    // 핸들러 직접 전달
+                .processEvent(usageEventHandler)
                 .processError(usageEventHandler::processError)
                 .buildEventProcessorClient();
+
+        usageEventHandler.setEventProcessorClient(client);
+        return client;
     }
 
     @Bean
@@ -85,12 +92,15 @@ public class EventHubConfig {
         var blobClient = blobStorageConfig
                 .getBlobContainerAsyncClient(BlobStorageContainers.PLAN_CONTAINER);
 
-        return new EventProcessorClientBuilder()
+        EventProcessorClient client = new EventProcessorClientBuilder()
                 .connectionString(connectionString, planHubName)
                 .consumerGroup(planConsumerGroup)
                 .checkpointStore(new BlobCheckpointStore(blobClient))
-                .processEvent(planEventHandler)    // 핸들러 직접 전달
+                .processEvent(planEventHandler)
                 .processError(planEventHandler::processError)
                 .buildEventProcessorClient();
+
+        planEventHandler.setEventProcessorClient(client);
+        return client;
     }
 }

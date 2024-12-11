@@ -12,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.retry.annotation.Backoff;
 
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -36,10 +38,12 @@ public class PhonePlanEventHandler implements Consumer<EventContext> {
     }
 
     public void setEventProcessorClient(EventProcessorClient client) {
+        log.info("Setting Plan Event Processor Client");
         this.eventProcessorClient = client;
         startEventProcessing();
     }
 
+    @Retryable(maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
     public void startEventProcessing() {
         if (eventProcessorClient != null) {
             log.info("Starting Plan Event Processor...");
@@ -50,6 +54,8 @@ public class PhonePlanEventHandler implements Consumer<EventContext> {
                 log.error("Failed to start Plan Event Processor: {}", e.getMessage(), e);
                 throw new RuntimeException("Failed to start event processor", e);
             }
+        } else {
+            log.warn("Plan Event Processor Client is not set");
         }
     }
 
@@ -57,21 +63,24 @@ public class PhonePlanEventHandler implements Consumer<EventContext> {
     @Transactional
     public void accept(EventContext eventContext) {
         String eventData = eventContext.getEventData().getBodyAsString();
+        String partitionId = eventContext.getPartitionContext().getPartitionId();
 
         try {
-            log.info("Processing plan event: partition={}, offset={}",
-                    eventContext.getPartitionContext().getPartitionId(),
-                    eventContext.getEventData().getSequenceNumber());
+            log.debug("Processing plan event: partition={}, offset={}, data={}",
+                    partitionId,
+                    eventContext.getEventData().getSequenceNumber(),
+                    eventData);
 
             PhonePlanEvent event = parseEvent(eventData);
             if (event != null) {
                 processUserEvent(event);
                 eventsProcessed.incrementAndGet();
+                eventContext.updateCheckpoint();
+                log.debug("Plan event processed successfully: userId={}", event.getUserId());
             }
-            eventContext.updateCheckpoint();
-
         } catch (Exception e) {
-            log.error("Failed to process plan event: {}", eventData, e);
+            log.error("Failed to process plan event: partition={}, data={}, error={}",
+                    partitionId, eventData, e.getMessage(), e);
             eventErrors.incrementAndGet();
         }
     }
@@ -91,7 +100,7 @@ public class PhonePlanEventHandler implements Consumer<EventContext> {
                 PhonePlanView view = getOrCreatePhonePlanView(event.getUserId());
                 updateViewFromEvent(view, event);
                 phonePlanViewRepository.save(view);
-                log.info("Successfully processed plan event for userId={}: plan={}",
+                log.debug("Successfully processed plan event for userId={}: plan={}",
                         event.getUserId(), event.getPlanName());
                 return null;
             });
@@ -107,7 +116,7 @@ public class PhonePlanEventHandler implements Consumer<EventContext> {
         if (view == null) {
             view = new PhonePlanView();
             view.setUserId(userId);
-            log.info("Creating new PhonePlanView for userId={}", userId);
+            log.debug("Creating new PhonePlanView for userId={}", userId);
         }
         return view;
     }
