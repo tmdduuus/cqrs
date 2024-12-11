@@ -89,3 +89,5 @@ main() {
     kubectl get all -n $DB_NAMESPACE 2>/dev/null || true
     kubectl get all -n $APP_NAMESPACE 2>/dev/null || true
 }
+
+main
