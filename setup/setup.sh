@@ -121,6 +121,7 @@ setup_acr_permission() {
     fi
 }
 
+
 # 애플리케이션 빌드
 build_application() {
    log "애플리케이션 빌드 중..."
