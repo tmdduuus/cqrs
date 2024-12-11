@@ -135,36 +135,6 @@ public class PhonePlanCommandService {
                 .build();
     }
 
-    private <T> T createEvent(T event) {
-        if (event instanceof PhonePlan) {
-            PhonePlan plan = (PhonePlan) event;
-            return (T) PhonePlanEvent.builder()
-                    .eventId(UUID.randomUUID().toString())
-                    .eventType("PLAN_CHANGED")
-                    .userId(plan.getUserId())
-                    .planName(plan.getPlanName())
-                    .dataAllowance(plan.getDataAllowance())
-                    .callMinutes(plan.getCallMinutes())
-                    .messageCount(plan.getMessageCount())
-                    .monthlyFee(plan.getMonthlyFee())
-                    .status(plan.getStatus())
-                    .timestamp(LocalDateTime.now())
-                    .build();
-        } else if (event instanceof UsageUpdateRequest) {
-            UsageUpdateRequest request = (UsageUpdateRequest) event;
-            return (T) UsageUpdatedEvent.builder()
-                    .eventId(UUID.randomUUID().toString())
-                    .eventType("USAGE_UPDATED")
-                    .userId(request.getUserId())
-                    .dataUsage(request.getDataUsage())
-                    .callUsage(request.getCallUsage())
-                    .messageUsage(request.getMessageUsage())
-                    .timestamp(LocalDateTime.now())
-                    .build();
-        }
-        throw new IllegalArgumentException("지원되지 않는 이벤트 타입입니다: " + event.getClass().getSimpleName());
-    }
-
     private String getEventType(Object event) {
         if (event instanceof PhonePlanEvent) {
             return EventHubConstants.EVENT_TYPE_PLAN;
