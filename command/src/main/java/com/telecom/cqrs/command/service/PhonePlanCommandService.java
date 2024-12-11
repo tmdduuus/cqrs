@@ -45,7 +45,8 @@ public class PhonePlanCommandService {
     public PhonePlan changePhonePlan(PhonePlan phonePlan) {
         try {
             PhonePlan savedPlan = savePlan(phonePlan);
-            publishEvent(createEvent(savedPlan), savedPlan.getUserId(), planEventProducer);
+            PhonePlanEvent event = createPlanEvent(savedPlan);
+            publishEvent(event, savedPlan.getUserId(), planEventProducer);
             return savedPlan;
         } catch (Exception e) {
             log.warn("요금제 변경 실패: userId={}, error={}", maskUserId(phonePlan.getUserId()), e.getMessage());
@@ -84,7 +85,8 @@ public class PhonePlanCommandService {
             phonePlanRepository.findByUserId(request.getUserId())
                     .orElseThrow(() -> new UsageUpdateException("존재하지 않는 사용자입니다: " + maskUserId(request.getUserId())));
 
-            publishEvent(createEvent(request), request.getUserId(), usageEventProducer);
+            UsageUpdatedEvent event = createUsageEvent(request);
+            publishEvent(event, request.getUserId(), usageEventProducer);
 
             return UsageUpdateResponse.builder()
                     .success(true)
@@ -104,6 +106,33 @@ public class PhonePlanCommandService {
         existingPlan.setMessageCount(newPlan.getMessageCount());
         existingPlan.setMonthlyFee(newPlan.getMonthlyFee());
         existingPlan.setStatus(newPlan.getStatus() == null ? existingPlan.getStatus() : newPlan.getStatus());
+    }
+
+    private PhonePlanEvent createPlanEvent(PhonePlan plan) {
+        return PhonePlanEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType("PLAN_CHANGED")
+                .userId(plan.getUserId())
+                .planName(plan.getPlanName())
+                .dataAllowance(plan.getDataAllowance())
+                .callMinutes(plan.getCallMinutes())
+                .messageCount(plan.getMessageCount())
+                .monthlyFee(plan.getMonthlyFee())
+                .status(plan.getStatus())
+                .timestamp(LocalDateTime.now())
+                .build();
+    }
+
+    private UsageUpdatedEvent createUsageEvent(UsageUpdateRequest request) {
+        return UsageUpdatedEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType("USAGE_UPDATED")
+                .userId(request.getUserId())
+                .dataUsage(request.getDataUsage())
+                .callUsage(request.getCallUsage())
+                .messageUsage(request.getMessageUsage())
+                .timestamp(LocalDateTime.now())
+                .build();
     }
 
     private <T> T createEvent(T event) {
