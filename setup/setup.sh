@@ -778,23 +778,13 @@ EOF
      log "Error: Service External IP를 얻는데 실패했습니다"
      exit 1
    fi
-
-   log "Command Service URL: http://$COMMAND_IP:8080"
-   log "Query Service URL: http://$QUERY_IP:8080"
 }
 
 # Completion 메시지 출력
 print_completion_message() {
    log "=== 배포 완료 ==="
-   log "Command 서비스: http://${NAME}-command.${APP_NAMESPACE}"
-   log "Query 서비스: http://${NAME}-query.${APP_NAMESPACE}"
-   log "Swagger UI: http://${NAME}-command.${APP_NAMESPACE}/swagger-ui.html"
-
-   log "=== 상태 확인 명령어 ==="
-   log "kubectl get pods -n $APP_NAMESPACE"
-   log "kubectl get pods -n $DB_NAMESPACE"
-   log "kubectl logs -f deployment/$NAME-command -n $APP_NAMESPACE"
-   log "kubectl logs -f deployment/$NAME-query -n $APP_NAMESPACE"
+   log "Command Service URL: http://$COMMAND_IP:8080"
+   log "Query Service URL: http://$QUERY_IP:8080"
 }
 
 # 메인 실행 함수
