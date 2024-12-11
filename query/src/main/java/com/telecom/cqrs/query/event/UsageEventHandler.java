@@ -64,7 +64,7 @@ public class UsageEventHandler implements Consumer<EventContext> {
     public void accept(EventContext eventContext) {
         String eventData = eventContext.getEventData().getBodyAsString();
         String partitionId = eventContext.getPartitionContext().getPartitionId();
-
+        log.info("***** Received usage event: {}", eventData);
         try {
             log.debug("Processing usage event: partition={}, offset={}, data={}",
                     partitionId,
@@ -100,8 +100,10 @@ public class UsageEventHandler implements Consumer<EventContext> {
                 PhonePlanView view = getPhonePlanView(event.getUserId());
                 if (view != null) {
                     updateViewFromEvent(view, event);
-                    phonePlanViewRepository.save(view);
-                    log.debug("Successfully processed usage event for userId={}", event.getUserId());
+                    PhonePlanView savedView = phonePlanViewRepository.save(view);
+                    log.info("***** Usage event processed result - userId: {}, dataUsage: {}, callUsage: {}, messageUsage: {}",
+                            savedView.getUserId(), savedView.getDataUsage(),
+                            savedView.getCallUsage(), savedView.getMessageUsage());  // 추가
                 }
                 return null;
             });

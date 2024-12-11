@@ -65,6 +65,8 @@ public class PhonePlanEventHandler implements Consumer<EventContext> {
         String eventData = eventContext.getEventData().getBodyAsString();
         String partitionId = eventContext.getPartitionContext().getPartitionId();
 
+        log.info("***** Received plan event: {}", eventData);
+
         try {
             log.debug("Processing plan event: partition={}, offset={}, data={}",
                     partitionId,
@@ -99,9 +101,10 @@ public class PhonePlanEventHandler implements Consumer<EventContext> {
             retryTemplate.execute(context -> {
                 PhonePlanView view = getOrCreatePhonePlanView(event.getUserId());
                 updateViewFromEvent(view, event);
-                phonePlanViewRepository.save(view);
-                log.debug("Successfully processed plan event for userId={}: plan={}",
-                        event.getUserId(), event.getPlanName());
+                PhonePlanView savedView = phonePlanViewRepository.save(view);
+                log.info("***** Plan event processed result - userId: {}, planName: {}, dataAllowance: {}, callMinutes: {}, messageCount: {}",
+                        savedView.getUserId(), savedView.getPlanName(), savedView.getDataAllowance(),
+                        savedView.getCallMinutes(), savedView.getMessageCount());  // 추가
                 return null;
             });
         } catch (Exception e) {
