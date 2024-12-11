@@ -26,6 +26,9 @@ public class EventHubConfig {
     @Value("${EVENT_HUB_USAGE_NAME}")
     private String usageHubName;
 
+    @Value("${BLOB_CONTAINER}")
+    private String blobContainer;
+
     private final BlobStorageConfig blobStorageConfig;
     private final UsageEventHandler usageEventHandler;
     private final PhonePlanEventHandler planEventHandler;
@@ -46,6 +49,7 @@ public class EventHubConfig {
         validateConnectionString("usageConnectionString", usageConnectionString);
         validateNotEmpty("planHubName", planHubName);
         validateNotEmpty("usageHubName", usageHubName);
+        validateNotEmpty("blobContainer", blobContainer);
         log.info("Event Hub configuration validated successfully");
     }
 
@@ -67,10 +71,11 @@ public class EventHubConfig {
 
     @Bean
     public EventProcessorClient usageEventProcessor() {
-        log.info("Creating usage event processor with hub: {}", usageHubName);
+        log.info("Creating usage event processor with hub: {}, container: {}",
+                usageHubName, blobContainer);
 
         var blobClient = blobStorageConfig
-                .getBlobContainerAsyncClient(BlobStorageContainers.USAGE_CONTAINER);
+                .getBlobContainerAsyncClient(blobContainer);
 
         EventProcessorClient client = new EventProcessorClientBuilder()
                 .connectionString(usageConnectionString, usageHubName)
@@ -86,10 +91,11 @@ public class EventHubConfig {
 
     @Bean
     public EventProcessorClient planEventProcessor() {
-        log.info("Creating plan event processor with hub: {}", planHubName);
+        log.info("Creating plan event processor with hub: {}, container: {}",
+                planHubName, blobContainer);
 
         var blobClient = blobStorageConfig
-                .getBlobContainerAsyncClient(BlobStorageContainers.PLAN_CONTAINER);
+                .getBlobContainerAsyncClient(blobContainer);
 
         EventProcessorClient client = new EventProcessorClientBuilder()
                 .connectionString(planConnectionString, planHubName)

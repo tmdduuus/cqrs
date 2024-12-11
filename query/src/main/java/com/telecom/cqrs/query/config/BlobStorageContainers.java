@@ -1,11 +1,18 @@
 package com.telecom.cqrs.query.config;
 
-/**
- * Blob Storage 컨테이너 이름을 관리하는 상수 클래스입니다.
- */
-public class BlobStorageContainers {
-    public static final String USAGE_CONTAINER = "usage-checkpoints";
-    public static final String PLAN_CONTAINER = "plan-checkpoints";
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
-    private BlobStorageContainers() {} // 인스턴스화 방지
+@Component
+public class BlobStorageContainers {
+    @Value("${BLOB_CONTAINER}")
+    private String containerName;
+
+    public String getUsageContainer() {
+        return containerName;
+    }
+
+    public String getPlanContainer() {
+        return containerName;
+    }
 }

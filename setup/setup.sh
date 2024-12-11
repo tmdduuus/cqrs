@@ -78,6 +78,8 @@ setup_environment() {
    MONGO_PASSWORD="Passw0rd"
 
    # Event Hub 설정
+   STORAGE_ACCOUNT="${USERID}storage"
+   BLOB_CONTAINER="${USERID}-eventhub-checkpoints"
    PLAN_EVENT_HUB_NS="${USERID}-eventhub-plan-ns"
    USAGE_EVENT_HUB_NS="${USERID}-eventhub-usage-ns"
    EVENT_HUB_NAME="phone-plan-events"
@@ -482,14 +484,14 @@ setup_storage() {
 
     # Storage Account가 없으면 생성
     STORAGE_EXISTS=$(az storage account show \
-        --name dggastorage \
+        --name $STORAGE_ACCOUNT \
         --resource-group $RESOURCE_GROUP \
         --query name \
         --output tsv 2>/dev/null)
 
     if [ -z "$STORAGE_EXISTS" ]; then
         az storage account create \
-            --name dggastorage \
+            --name $STORAGE_ACCOUNT \
             --resource-group $RESOURCE_GROUP \
             --location $LOCATION \
             --sku Standard_LRS
@@ -498,7 +500,7 @@ setup_storage() {
 
     # 연결 문자열 얻기
     STORAGE_CONNECTION_STRING=$(az storage account show-connection-string \
-        --name dggastorage \
+        --name $STORAGE_ACCOUNT \
         --resource-group $RESOURCE_GROUP \
         --query connectionString \
         --output tsv)
@@ -506,7 +508,7 @@ setup_storage() {
 
     # Blob Container 생성
     az storage container create \
-        --name eventhub-checkpoints \
+        --name $BLOB_CONTAINER \
         --connection-string "$STORAGE_CONNECTION_STRING" \
         2>/dev/null || true
 
@@ -799,6 +801,8 @@ spec:
          value: "${PLAN_EVENT_HUB_NS}"
        - name: EVENT_HUB_NAMESPACE_USAGE
          value: "${USAGE_EVENT_HUB_NS}"
+       - name: BLOB_CONTAINER
+         value: "${BLOB_CONTAINER}"
        resources:
          requests:
            cpu: "250m"

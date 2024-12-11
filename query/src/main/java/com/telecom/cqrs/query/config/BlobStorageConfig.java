@@ -21,7 +21,12 @@ public class BlobStorageConfig {
     @Value("${STORAGE_CONNECTION_STRING}")
     private String storageConnectionString;
 
+    private final BlobStorageContainers containers;
     private BlobServiceClient blobServiceClient;
+
+    public BlobStorageConfig(BlobStorageContainers containers) {
+        this.containers = containers;
+    }
 
     @PostConstruct
     public void init() {
@@ -39,11 +44,11 @@ public class BlobStorageConfig {
     @Retryable(maxAttempts = 3, backoff = @Backoff(delay = 1000))
     private void initializeContainers() {
         try {
-            createContainerIfNotExists(BlobStorageContainers.USAGE_CONTAINER);
-            createContainerIfNotExists(BlobStorageContainers.PLAN_CONTAINER);
-            log.info("All required blob containers initialized successfully");
+            // 하나의 컨테이너만 생성
+            createContainerIfNotExists(containers.getUsageContainer());
+            log.info("Blob container initialized successfully");
         } catch (Exception e) {
-            log.error("Failed to initialize blob containers: {}", e.getMessage(), e);
+            log.error("Failed to initialize blob container: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to initialize storage", e);
         }
     }
@@ -71,11 +76,8 @@ public class BlobStorageConfig {
                 .getBlobContainerAsyncClient(containerName);
     }
 
-    // In BlobStorageConfig.java, change:
     public BlobContainerClient getBlobContainerClient(String containerName) {
         createContainerIfNotExists(containerName);
         return blobServiceClient.getBlobContainerClient(containerName);
     }
-
-
 }
