@@ -32,7 +32,7 @@ public class UsageEventHandler {
 
     public void startEventProcessing() {
         if (eventProcessorClient != null) {
-            log.info("Starting Usage Event Processor...");
+            log.info("******[USAGE] Starting Usage Event Processor...");
             try {
                 eventProcessorClient.start();
                 log.info("Usage Event Processor started successfully");

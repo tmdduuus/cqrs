@@ -32,7 +32,7 @@ public class PhonePlanEventHandler {
 
     public void startEventProcessing() {
         if (eventProcessorClient != null) {
-            log.info("Starting PhonePlan Event Processor...");
+            log.info("******[PHONEPLAN] Starting PhonePlan Event Processor...");
             try {
                 eventProcessorClient.start();
                 log.info("PhonePlan Event Processor started successfully");
