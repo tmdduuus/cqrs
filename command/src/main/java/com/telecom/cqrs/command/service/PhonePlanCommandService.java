@@ -6,10 +6,13 @@ import com.azure.messaging.eventhubs.EventHubProducerClient;
 import com.azure.messaging.eventhubs.models.CreateBatchOptions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.telecom.cqrs.command.domain.PhonePlan;
+import com.telecom.cqrs.common.constant.EventHubConstants;
 import com.telecom.cqrs.common.dto.UsageUpdateRequest;
 import com.telecom.cqrs.common.dto.UsageUpdateResponse;
 import com.telecom.cqrs.common.event.PhonePlanEvent;
 import com.telecom.cqrs.common.event.UsageUpdatedEvent;
+import com.telecom.cqrs.common.exception.EventHubException;
+import com.telecom.cqrs.common.exception.PhonePlanChangeException;
 import com.telecom.cqrs.common.exception.UsageUpdateException;
 import com.telecom.cqrs.command.repository.PhonePlanRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -39,37 +42,62 @@ public class PhonePlanCommandService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
     public PhonePlan changePhonePlan(PhonePlan phonePlan) {
         try {
-            // 기존 데이터 조회
-            PhonePlan existingPlan = phonePlanRepository.findByUserId(phonePlan.getUserId())
-                    .orElse(null);
-
-            PhonePlan savedPlan;
-            if (existingPlan != null) {
-                // 기존 데이터 있으면 업데이트
-                log.info("Updating existing plan for userId={}", phonePlan.getUserId());
-                updateExistingPlan(existingPlan, phonePlan);
-                savedPlan = phonePlanRepository.save(existingPlan);
-            } else {
-                // 신규 데이터 생성
-                log.info("Creating new plan for userId={}", phonePlan.getUserId());
-                phonePlan.setStatus(phonePlan.getStatus() == null ? "ACTIVE" : phonePlan.getStatus());
-                savedPlan = phonePlanRepository.save(phonePlan);
-            }
-
-            // 이벤트 발행
-            publishEvent(savedPlan, savedPlan.getUserId(), planEventProducer);
-
+            PhonePlan savedPlan = savePlan(phonePlan);
+            publishEvent(createEvent(savedPlan), savedPlan.getUserId(), planEventProducer);
             return savedPlan;
         } catch (Exception e) {
-            log.error("요금제 변경 실패: userId={}, error={}", phonePlan.getUserId(), e.getMessage(), e);
-            throw new RuntimeException("요금제 변경 중 오류가 발생했습니다", e);
+            log.warn("요금제 변경 실패: userId={}, error={}", maskUserId(phonePlan.getUserId()), e.getMessage());
+            throw new PhonePlanChangeException("요금제 변경 중 오류가 발생했습니다", e);
         }
     }
 
-    private void updateExistingPlan(PhonePlan existingPlan, PhonePlan newPlan) {
+    private <T> void publishEvent(T event, String partitionKey, EventHubProducerClient producer) {
+        try {
+            CreateBatchOptions options = new CreateBatchOptions()
+                    .setPartitionKey(partitionKey);
+
+            EventDataBatch batch = producer.createBatch(options);
+            String eventJson = objectMapper.writeValueAsString(event);
+            EventData eventData = new EventData(eventJson);
+
+            String eventType = getEventType(event);
+            eventData.getProperties().put("type", eventType);
+
+            if (!batch.tryAdd(eventData)) {
+                throw new EventHubException("이벤트 크기가 너무 큽니다");
+            }
+
+            producer.send(batch);
+            log.info("이벤트 발행 완료: type={}, userId={}", eventType, maskUserId(partitionKey));
+
+        } catch (Exception e) {
+            log.warn("이벤트 발행 실패: type={}, userId={}, error={}",
+                    event.getClass().getSimpleName(), maskUserId(partitionKey), e.getMessage());
+            throw new EventHubException("이벤트 발행 중 오류가 발생했습니다", e);
+        }
+    }
+
+    public UsageUpdateResponse updateUsage(UsageUpdateRequest request) {
+        try {
+            phonePlanRepository.findByUserId(request.getUserId())
+                    .orElseThrow(() -> new UsageUpdateException("존재하지 않는 사용자입니다: " + maskUserId(request.getUserId())));
+
+            publishEvent(createEvent(request), request.getUserId(), usageEventProducer);
+
+            return UsageUpdateResponse.builder()
+                    .success(true)
+                    .message("사용량 업데이트가 완료되었습니다")
+                    .userId(maskUserId(request.getUserId()))
+                    .build();
+        } catch (Exception e) {
+            log.warn("사용량 업데이트 실패: userId={}, error={}", maskUserId(request.getUserId()), e.getMessage());
+            throw new UsageUpdateException("사용량 업데이트 중 오류가 발생했습니다", e);
+        }
+    }
+
+    private void update(PhonePlan existingPlan, PhonePlan newPlan) {
         existingPlan.setPlanName(newPlan.getPlanName());
         existingPlan.setDataAllowance(newPlan.getDataAllowance());
         existingPlan.setCallMinutes(newPlan.getCallMinutes());
@@ -78,80 +106,59 @@ public class PhonePlanCommandService {
         existingPlan.setStatus(newPlan.getStatus() == null ? existingPlan.getStatus() : newPlan.getStatus());
     }
 
-    public UsageUpdateResponse updateUsage(UsageUpdateRequest request) {
-        try {
-            // 사용자 존재 여부 확인
-            phonePlanRepository.findByUserId(request.getUserId())
-                    .orElseThrow(() -> new UsageUpdateException("존재하지 않는 사용자입니다: " + request.getUserId()));
-
-            // 이벤트 발행
-            publishEvent(createUsageEvent(request), request.getUserId(), usageEventProducer);
-
-            return UsageUpdateResponse.builder()
-                    .success(true)
-                    .message("사용량 업데이트가 완료되었습니다")
-                    .userId(request.getUserId())
+    private <T> T createEvent(T event) {
+        if (event instanceof PhonePlan) {
+            PhonePlan plan = (PhonePlan) event;
+            return (T) PhonePlanEvent.builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .eventType("PLAN_CHANGED")
+                    .userId(plan.getUserId())
+                    .planName(plan.getPlanName())
+                    .dataAllowance(plan.getDataAllowance())
+                    .callMinutes(plan.getCallMinutes())
+                    .messageCount(plan.getMessageCount())
+                    .monthlyFee(plan.getMonthlyFee())
+                    .status(plan.getStatus())
+                    .timestamp(LocalDateTime.now())
                     .build();
-        } catch (Exception e) {
-            log.error("사용량 업데이트 실패: userId={}, error={}", request.getUserId(), e.getMessage(), e);
-            throw new UsageUpdateException("사용량 업데이트 중 오류가 발생했습니다", e);
+        } else if (event instanceof UsageUpdateRequest) {
+            UsageUpdateRequest request = (UsageUpdateRequest) event;
+            return (T) UsageUpdatedEvent.builder()
+                    .eventId(UUID.randomUUID().toString())
+                    .eventType("USAGE_UPDATED")
+                    .userId(request.getUserId())
+                    .dataUsage(request.getDataUsage())
+                    .callUsage(request.getCallUsage())
+                    .messageUsage(request.getMessageUsage())
+                    .timestamp(LocalDateTime.now())
+                    .build();
         }
+        throw new IllegalArgumentException("지원되지 않는 이벤트 타입입니다: " + event.getClass().getSimpleName());
     }
 
-    private void publishEvent(Object event, String partitionKey, EventHubProducerClient producer) {
-        try {
-            /*
-            순서 보장을 위해 user id를 해싱하여 파티션을 나눔
-            동일한 파티션으로 가게 하여 처리순서 보장을 하게 됨
-            파티션키 미 지정시 round robin방식으로 랜덤하게 파티션이 배정됨
-            파티션은 물리적 분할 요소가 아니라 논리적 분할 요소임
-            */
-            CreateBatchOptions options = new CreateBatchOptions()
-                    .setPartitionKey(partitionKey);
-
-            EventDataBatch batch = producer.createBatch(options);
-
-            String eventJson = objectMapper.writeValueAsString(event);
-            EventData eventData = new EventData(eventJson);
-
-            if (!batch.tryAdd(eventData)) {
-                throw new RuntimeException("이벤트 크기가 너무 큽니다");
-            }
-
-            producer.send(batch);
-            log.info("이벤트 발행 완료: type={}, userId={}", event.getClass().getSimpleName(), partitionKey);
-
-        } catch (Exception e) {
-            log.error("이벤트 발행 실패: type={}, userId={}, error={}",
-                    event.getClass().getSimpleName(), partitionKey, e.getMessage(), e);
-            throw new RuntimeException("이벤트 발행 중 오류가 발생했습니다", e);
+    private String getEventType(Object event) {
+        if (event instanceof PhonePlanEvent) {
+            return EventHubConstants.EVENT_TYPE_PLAN;
+        } else if (event instanceof UsageUpdatedEvent) {
+            return EventHubConstants.EVENT_TYPE_USAGE;
         }
+        throw new IllegalArgumentException("지원되지 않는 이벤트 타입입니다: " + event.getClass().getSimpleName());
     }
 
-    private PhonePlanEvent createPhonePlanEvent(PhonePlan plan) {
-        return PhonePlanEvent.builder()
-                .eventId(UUID.randomUUID().toString())
-                .eventType("PLAN_CHANGED")
-                .userId(plan.getUserId())
-                .planName(plan.getPlanName())
-                .dataAllowance(plan.getDataAllowance())
-                .callMinutes(plan.getCallMinutes())
-                .messageCount(plan.getMessageCount())
-                .monthlyFee(plan.getMonthlyFee())
-                .status(plan.getStatus())
-                .timestamp(LocalDateTime.now())
-                .build();
+    @Transactional
+    protected PhonePlan savePlan(PhonePlan phonePlan) {
+        return phonePlanRepository.findByUserId(phonePlan.getUserId())
+                .map(existingPlan -> {
+                    update(existingPlan, phonePlan);
+                    return phonePlanRepository.save(existingPlan);
+                })
+                .orElseGet(() -> phonePlanRepository.save(phonePlan));
     }
 
-    private UsageUpdatedEvent createUsageEvent(UsageUpdateRequest request) {
-        return UsageUpdatedEvent.builder()
-                .eventId(UUID.randomUUID().toString())
-                .eventType("USAGE_UPDATED")
-                .userId(request.getUserId())
-                .dataUsage(request.getDataUsage())
-                .callUsage(request.getCallUsage())
-                .messageUsage(request.getMessageUsage())
-                .timestamp(LocalDateTime.now())
-                .build();
+    private String maskUserId(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            return userId;
+        }
+        return userId.replaceAll("(\\w{2})(\\w+)(\\w{2})", "$1****$3");
     }
 }

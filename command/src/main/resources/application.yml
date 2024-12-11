@@ -19,13 +19,10 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # Event Hub 설정
-  kafka:
-    properties:
-      security.protocol: SASL_SSL
-      sasl.mechanism: PLAIN
-      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="${EVENT_HUB_CONNECTION_STRING}";
-    bootstrap-servers: ${EVENT_HUB_NAMESPACE}.servicebus.windows.net:9093
+  event-hub:
+    connection-string: ${EVENT_HUB_CONNECTION_STRING}
+    plan-name: ${EVENT_HUB_PLAN_NAME:phone-plan-events}
+    usage-name: ${EVENT_HUB_USAGE_NAME:phone-usage-events}
 
 azure:
   storage:
