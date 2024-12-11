@@ -77,9 +77,11 @@ setup_environment() {
    POSTGRES_PASSWORD="Passw0rd"
    MONGO_PASSWORD="Passw0rd"
 
-    # Event Hub 설정
-    EVENT_HUB_NS="dgga-eventhub-ns"
-    EVENT_HUB_NAME="phone-plan-events"
+   # Event Hub 설정
+   EVENT_HUB_NS="dgga-eventhub-ns"
+   EVENT_HUB_NAME="phone-plan-events"
+   PLAN_HUB_NAME="${EVENT_HUB_NAME}-plan"
+   USAGE_HUB_NAME="${EVENT_HUB_NAME}-usage"
 
    LOG_FILE="deployment_${NAME}.log"
 }
@@ -539,7 +541,6 @@ setup_event_hub() {
    fi
 
    # Plan 변경 이벤트용 Event Hub
-   PLAN_HUB_NAME="${EVENT_HUB_NAME}-plan"
    EXISTING_PLAN_HUB=$(az eventhubs eventhub show \
        --name $PLAN_HUB_NAME \
        --namespace-name $EVENT_HUB_NS \
@@ -560,7 +561,6 @@ setup_event_hub() {
    fi
 
    # Usage 업데이트 이벤트용 Event Hub
-   USAGE_HUB_NAME="${EVENT_HUB_NAME}-usage"
    EXISTING_USAGE_HUB=$(az eventhubs eventhub show \
        --name $USAGE_HUB_NAME \
        --namespace-name $EVENT_HUB_NS \
@@ -634,8 +634,8 @@ data:
   JPA_SHOW_SQL: "false"
 
   # Event Hub 설정
-  EVENT_HUB_PLAN_NAME: "${EVENT_HUB_NAME}-plan"
-  EVENT_HUB_USAGE_NAME: "${EVENT_HUB_NAME}-usage"
+  EVENT_HUB_PLAN_NAME: "${PLAN_HUB_NAME}"
+  EVENT_HUB_USAGE_NAME: "${USAGE_HUB_NAME}"
 EOF
 
    log "애플리케이션 배포 중..."

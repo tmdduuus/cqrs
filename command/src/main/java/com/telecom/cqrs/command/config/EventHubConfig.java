@@ -15,6 +15,10 @@ public class EventHubConfig {
 
     @Value("${EVENT_HUB_CONNECTION_STRING}")
     private String connectionString;
+    @Value("${EVENT_HUB_PLAN_NAME}")
+    private String eventHubPlanName;
+    @Value("${EVENT_HUB_USAGE_NAME}")
+    private String eventHubUsageName;
 
     @PostConstruct
     public void validateConfig() {
@@ -26,17 +30,17 @@ public class EventHubConfig {
 
     @Bean(name = "usageEventProducer")
     public EventHubProducerClient usageEventProducer() {
-        log.info("Creating Usage Event producer for hub: {}", EventHubConstants.USAGE_HUB_NAME);
+        log.info("Creating Usage Event producer for hub: {}", eventHubUsageName);
         return new EventHubClientBuilder()
-                .connectionString(connectionString, EventHubConstants.USAGE_HUB_NAME)
+                .connectionString(connectionString, eventHubUsageName)
                 .buildProducerClient();
     }
 
     @Bean(name = "planEventProducer")
     public EventHubProducerClient planEventProducer() {
-        log.info("Creating Plan Event producer for hub: {}", EventHubConstants.PLAN_HUB_NAME);
+        log.info("Creating Plan Event producer for hub: {}", eventHubPlanName);
         return new EventHubClientBuilder()
-                .connectionString(connectionString, EventHubConstants.PLAN_HUB_NAME)
+                .connectionString(connectionString, eventHubPlanName)
                 .buildProducerClient();
     }
 }
