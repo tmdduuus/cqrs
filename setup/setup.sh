@@ -783,8 +783,8 @@ EOF
 # Completion 메시지 출력
 print_completion_message() {
    log "=== 배포 완료 ==="
-   log "Command Service URL: http://$COMMAND_IP:8080"
-   log "Query Service URL: http://$QUERY_IP:8080"
+   log "Command Service URL: http://$COMMAND_IP:8080/swagger-ui.html"
+   log "Query Service URL: http://$QUERY_IP:8080/swagger-ui.html"
 }
 
 # 메인 실행 함수
