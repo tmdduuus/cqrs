@@ -1,4 +1,4 @@
-// File: cqrs/query/src/main/java/com/telecom/cqrs/query/event/UsageEventHandler.java
+// UsageEventHandler.java
 package com.telecom.cqrs.query.event;
 
 import com.azure.messaging.eventhubs.EventProcessorClient;
@@ -32,7 +32,7 @@ public class UsageEventHandler {
 
     public void startEventProcessing() {
         if (eventProcessorClient != null) {
-            log.info("******[USAGE] Starting Usage Event Processor...");
+            log.info("Starting Usage Event Processor...");
             try {
                 eventProcessorClient.start();
                 log.info("Usage Event Processor started successfully");
@@ -45,17 +45,26 @@ public class UsageEventHandler {
 
     public void processEvent(EventContext eventContext) {
         String eventData = eventContext.getEventData().getBodyAsString();
+        String eventType = eventContext.getEventData()
+                .getProperties()
+                .get("type")
+                .toString();
 
         try {
-            // 이벤트 정보 로깅
-            log.info("Processing usage event: partition={}, offset={}",
+            log.info("Processing usage event: type={}, partition={}, offset={}",
+                    eventType,
                     eventContext.getPartitionContext().getPartitionId(),
                     eventContext.getEventData().getSequenceNumber());
 
+            // 이벤트 타입 검증
+            if (!"USAGE_UPDATED".equals(eventType)) {
+                log.warn("Skipping non-usage event: {}", eventType);
+                eventContext.updateCheckpoint();
+                return;
+            }
+
             UsageUpdatedEvent event = objectMapper.readValue(eventData, UsageUpdatedEvent.class);
             handleUsageEvent(event);
-
-            // 체크포인트 갱신
             eventContext.updateCheckpoint();
 
             log.info("Successfully processed usage event for userId={}", event.getUserId());
@@ -73,8 +82,7 @@ public class UsageEventHandler {
 
     private void handleUsageEvent(UsageUpdatedEvent event) {
         try {
-            // 들어오는 이벤트 데이터 로깅
-            log.info("*************** Received usage event: [userId={}, dataUsage={}, callUsage={}, messageUsage={}]",
+            log.info("Received usage event: [userId={}, dataUsage={}, callUsage={}, messageUsage={}]",
                     event.getUserId(),
                     event.getDataUsage(),
                     event.getCallUsage(),
@@ -86,8 +94,7 @@ public class UsageEventHandler {
                 return;
             }
 
-            // 기존 데이터 로깅
-            log.info("*************** Existing phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}]",
+            log.info("Existing phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}]",
                     view.getUserId(),
                     view.getPlanName(),
                     view.getDataAllowance(),
@@ -95,21 +102,10 @@ public class UsageEventHandler {
                     view.getMessageCount(),
                     view.getMonthlyFee());
 
-            // 사용량만 업데이트 (다른 필드는 기존값 유지)
-            if (event.getDataUsage() != null) {
-                view.setDataUsage(event.getDataUsage());
-            }
-            if (event.getCallUsage() != null) {
-                view.setCallUsage(event.getCallUsage());
-            }
-            if (event.getMessageUsage() != null) {
-                view.setMessageUsage(event.getMessageUsage());
-            }
-
+            updateViewFromEvent(view, event);
             phonePlanViewRepository.save(view);
 
-            // 업데이트 후 데이터 로깅
-            log.info("*************** Updated phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}, dataUsage={}, callUsage={}, messageUsage={}]",
+            log.info("Updated phone plan: [userId={}, planName={}, dataAllowance={}, callMinutes={}, messageCount={}, monthlyFee={}, dataUsage={}, callUsage={}, messageUsage={}]",
                     view.getUserId(),
                     view.getPlanName(),
                     view.getDataAllowance(),

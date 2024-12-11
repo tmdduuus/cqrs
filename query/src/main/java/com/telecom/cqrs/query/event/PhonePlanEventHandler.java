@@ -1,4 +1,4 @@
-// File: cqrs/query/src/main/java/com/telecom/cqrs/query/event/PhonePlanEventHandler.java
+// PhonePlanEventHandler.java
 package com.telecom.cqrs.query.event;
 
 import com.azure.messaging.eventhubs.EventProcessorClient;
@@ -32,7 +32,7 @@ public class PhonePlanEventHandler {
 
     public void startEventProcessing() {
         if (eventProcessorClient != null) {
-            log.info("******[PHONEPLAN] Starting PhonePlan Event Processor...");
+            log.info("Starting PhonePlan Event Processor...");
             try {
                 eventProcessorClient.start();
                 log.info("PhonePlan Event Processor started successfully");
@@ -45,17 +45,26 @@ public class PhonePlanEventHandler {
 
     public void processEvent(EventContext eventContext) {
         String eventData = eventContext.getEventData().getBodyAsString();
+        String eventType = eventContext.getEventData()
+                .getProperties()
+                .get("type")
+                .toString();
 
         try {
-            // 이벤트 정보 로깅
-            log.info("Processing plan event: partition={}, offset={}",
+            log.info("Processing plan event: type={}, partition={}, offset={}",
+                    eventType,
                     eventContext.getPartitionContext().getPartitionId(),
                     eventContext.getEventData().getSequenceNumber());
 
+            // 이벤트 타입 검증
+            if (!"PLAN_CHANGED".equals(eventType)) {
+                log.warn("Skipping non-plan event: {}", eventType);
+                eventContext.updateCheckpoint();
+                return;
+            }
+
             PhonePlanEvent event = objectMapper.readValue(eventData, PhonePlanEvent.class);
             handlePhonePlanEvent(event);
-
-            // 체크포인트 갱신
             eventContext.updateCheckpoint();
 
             log.info("Successfully processed plan event for userId={}", event.getUserId());
