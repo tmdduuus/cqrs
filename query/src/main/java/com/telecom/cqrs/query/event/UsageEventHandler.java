@@ -62,12 +62,13 @@ public class UsageEventHandler {
                 eventContext.updateCheckpoint();
                 return;
             }
-
+            log.info("*************** Start: USAGE ****************");
             UsageUpdatedEvent event = objectMapper.readValue(eventData, UsageUpdatedEvent.class);
             handleUsageEvent(event);
             eventContext.updateCheckpoint();
 
             log.info("Successfully processed usage event for userId={}", event.getUserId());
+            log.info("*************** End: Phone Plan ****************");
 
         } catch (Exception e) {
             log.error("Failed to process usage event: {}", eventData, e);

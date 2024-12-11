@@ -62,13 +62,13 @@ public class PhonePlanEventHandler {
                 eventContext.updateCheckpoint();
                 return;
             }
-
+            log.info("*************** Start: Phone Plan ****************");
             PhonePlanEvent event = objectMapper.readValue(eventData, PhonePlanEvent.class);
             handlePhonePlanEvent(event);
             eventContext.updateCheckpoint();
 
             log.info("Successfully processed plan event for userId={}", event.getUserId());
-
+            log.info("*************** End: Phone Plan ****************");
         } catch (Exception e) {
             log.error("Failed to process plan event: {}", eventData, e);
         }
